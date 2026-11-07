@@ -1,0 +1,1895 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>DeepSeek Harness · 一键更新按钮原型</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%234d6bfe'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0a0c11;
+    --bg-2: #0e1118;
+    --panel: #131722;
+    --panel-2: #171c28;
+    --border: #242b3a;
+    --border-soft: #1d2330;
+    --text: #e9edf6;
+    --muted: #8b94a9;
+    --muted-2: #7b8499;
+    --accent: #4d6bfe;
+    --accent-2: #7d92ff;
+    --green: #37c07a;
+    --amber: #e0a33e;
+    --red: #e15b5b;
+    --radius: 16px;
+    --shadow: 0 18px 50px rgba(0,0,0,.35);
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(900px 500px at 78% -10%, rgba(77,107,254,.14), transparent 60%),
+      radial-gradient(700px 420px at 8% 110%, rgba(55,192,122,.06), transparent 60%),
+      var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  body.modal-open { overflow: hidden; }
+  button { font: inherit; }
+  :focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+  .app { display: flex; min-height: 100vh; }
+
+  /* Sidebar */
+  .sidebar {
+    width: 236px;
+    flex: 0 0 236px;
+    border-right: 1px solid var(--border-soft);
+    background: rgba(12,15,22,.72);
+    backdrop-filter: blur(18px);
+    padding: 18px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 6px 8px; }
+  .mark {
+    width: 30px; height: 30px; border-radius: 9px;
+    background: linear-gradient(135deg, #4d6bfe, #8f6bff 60%, #56d0c0);
+    box-shadow: 0 6px 18px rgba(77,107,254,.35);
+    position: relative;
+  }
+  .mark::after {
+    content: ""; position: absolute; inset: 8px 7px;
+    border: 2px solid rgba(255,255,255,.9); border-radius: 50% 50% 45% 45%;
+    border-top-color: transparent; transform: rotate(-18deg);
+  }
+  .brand-text { display: flex; flex-direction: column; line-height: 1.2; }
+  .brand-text strong { font-size: 13.5px; letter-spacing: .1px; }
+  .brand-text span { font-size: 11px; color: var(--muted-2); }
+  .nav-group { display: flex; flex-direction: column; gap: 2px; }
+  .nav-label { font-size: 10.5px; letter-spacing: .12em; color: var(--muted-2); padding: 0 10px 6px; text-transform: uppercase; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 10px; border-radius: 9px;
+    color: var(--muted); text-decoration: none; font-size: 13px;
+    border: 1px solid transparent;
+  }
+  .nav-item svg { width: 16px; height: 16px; opacity: .8; }
+  .nav-item:hover { background: rgba(255,255,255,.035); color: var(--text); }
+  .nav-item.active { background: rgba(77,107,254,.12); color: #cdd7ff; border-color: rgba(77,107,254,.25); }
+  .nav-item .nav-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--amber); margin-left: auto; }
+  .sidebar-foot { margin-top: auto; padding: 10px; border-top: 1px solid var(--border-soft); color: var(--muted-2); font-size: 11px; }
+
+  /* Main */
+  .main { flex: 1; min-width: 0; padding: 26px 38px 118px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 26px; }
+  .crumbs { color: var(--muted-2); font-size: 12.5px; }
+  .crumbs b { color: var(--muted); font-weight: 500; }
+  .top-status { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px rgba(55,192,122,.1); }
+  .pulse.bad { background: var(--red); box-shadow: 0 0 0 4px rgba(225,91,91,.12); }
+
+  .page-head { margin-bottom: 22px; }
+  .page-head h1 { margin: 0 0 6px; font-size: 24px; letter-spacing: -.02em; }
+  .page-head p { margin: 0; color: var(--muted); font-size: 13px; }
+
+  .grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(280px, .85fr); gap: 16px; align-items: start; }
+  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+  .card {
+    background: linear-gradient(180deg, rgba(23,28,40,.96), rgba(17,21,30,.96));
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: 0 1px 0 rgba(255,255,255,.03) inset;
+  }
+  .card[aria-busy="true"] { border-color: rgba(77,107,254,.36); }
+  .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  .card h2 { margin: 0; font-size: 14.5px; letter-spacing: -.01em; }
+  .card .sub { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 24px; padding: 0 9px; border-radius: 999px;
+    font-size: 11.5px; font-weight: 600; white-space: nowrap;
+    background: rgba(77,107,254,.14); color: #b9c6ff; border: 1px solid rgba(77,107,254,.32);
+  }
+  .badge.green { background: rgba(55,192,122,.12); color: #8fe3b6; border-color: rgba(55,192,122,.3); }
+  .badge.amber { background: rgba(224,163,62,.12); color: #f0c37e; border-color: rgba(224,163,62,.3); }
+  .badge.red { background: rgba(225,91,91,.12); color: #f0a0a0; border-color: rgba(225,91,91,.3); }
+  .badge.gray { background: rgba(139,148,169,.1); color: var(--muted); border-color: rgba(139,148,169,.22); }
+
+  .version-row { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+  .version-block { display: flex; flex-direction: column; gap: 2px; }
+  .version-block .label { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-2); }
+  .version-block strong { font-size: 20px; letter-spacing: -.02em; font-weight: 650; }
+  .version-block strong.accent { color: #a9b9ff; }
+  .arrow { color: var(--muted-2); font-size: 16px; padding-bottom: 3px; }
+  .meta { margin-left: auto; display: flex; gap: 8px; color: var(--muted); font-size: 11.5px; padding-bottom: 4px; }
+  .meta span { padding: 3px 8px; border-radius: 999px; background: rgba(255,255,255,.04); border: 1px solid var(--border-soft); }
+
+  .desc { margin: 12px 0 0; color: var(--muted); font-size: 12.5px; }
+  .desc b { color: #cdd7ff; font-weight: 600; }
+
+  .actions { display: flex; align-items: center; gap: 9px; margin-top: 18px; flex-wrap: wrap; }
+  .btn {
+    height: 36px; padding: 0 15px; border-radius: 10px;
+    border: 1px solid transparent; cursor: pointer;
+    font-size: 13px; font-weight: 600; letter-spacing: .01em;
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    transition: background .16s, border-color .16s, transform .12s, opacity .16s;
+    white-space: nowrap;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary {
+    background: linear-gradient(180deg, #5b78ff, #4562f2);
+    color: white; box-shadow: 0 8px 22px rgba(77,107,254,.28), 0 1px 0 rgba(255,255,255,.18) inset;
+  }
+  .btn.primary:hover { background: linear-gradient(180deg, #6b86ff, #4f6cff); }
+  .btn.primary:disabled { background: #2a3040; color: #6f7890; box-shadow: none; cursor: not-allowed; }
+  .btn.ghost { background: rgba(255,255,255,.035); border-color: var(--border); color: #c7cede; }
+  .btn.ghost:hover { background: rgba(255,255,255,.06); border-color: #323b4e; }
+  .btn.ghost:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.subtle { background: transparent; color: var(--muted); padding: 0 8px; }
+  .btn.subtle:hover { color: var(--text); background: rgba(255,255,255,.04); }
+  .btn.danger { background: rgba(225,91,91,.12); border-color: rgba(225,91,91,.3); color: #f0a0a0; }
+
+  .progress-wrap { margin-top: 18px; padding: 14px; border: 1px solid var(--border-soft); border-radius: 12px; background: rgba(0,0,0,.16); }
+  .progress-top { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .progress-top b { color: var(--text); font-weight: 600; }
+  .progress { height: 6px; border-radius: 999px; background: #222836; overflow: hidden; }
+  .progress > div { height: 100%; width: 0%; border-radius: inherit; background: linear-gradient(90deg, #4d6bfe, #7d92ff 60%, #64d8c0); transition: width .28s ease; }
+  .progress.indeterminate > div { width: 35% !important; animation: slide 1.2s ease-in-out infinite; }
+  @keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+  .steps { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+  .step { font-size: 10.5px; color: var(--muted-2); display: flex; align-items: center; gap: 5px; }
+  .step::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #2b3242; }
+  .step.done { color: #8fe3b6; }
+  .step.done::before { background: var(--green); }
+  .step.active { color: #b9c6ff; }
+  .step.active::before { background: var(--accent); box-shadow: 0 0 0 4px rgba(77,107,254,.12); }
+
+  .message { margin-top: 16px; padding: 12px 14px; border-radius: 11px; font-size: 12.5px; border: 1px solid var(--border-soft); background: rgba(255,255,255,.025); color: var(--muted); }
+  .message strong { display: block; color: var(--text); font-size: 12.5px; margin-bottom: 2px; }
+  .message.ok { border-color: rgba(55,192,122,.26); background: rgba(55,192,122,.07); }
+  .message.ok strong { color: #a8ecc8; }
+  .message.warn { border-color: rgba(224,163,62,.26); background: rgba(224,163,62,.07); }
+  .message.warn strong { color: #f0c37e; }
+  .message.err { border-color: rgba(225,91,91,.28); background: rgba(225,91,91,.07); }
+  .message.err strong { color: #f0a0a0; }
+  .message .msg-actions { display: flex; gap: 8px; margin-top: 9px; flex-wrap: wrap; }
+  .message .msg-actions button { height: 28px; padding: 0 10px; border-radius: 7px; font-size: 11.5px; }
+  .message .code { display: inline-block; margin-right: 6px; padding: 1px 6px; border-radius: 5px; font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; color: #f0c37e; border: 1px solid rgba(224,163,62,.32); background: rgba(224,163,62,.08); }
+  .msg-list { margin-top: 6px; color: #d9b979; font-size: 11.5px; line-height: 1.7; }
+  .command { margin: 8px 0 0; padding: 9px 11px; border-radius: 8px; background: rgba(0,0,0,.32); border: 1px solid var(--border-soft); color: #cdd7ff; font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; overflow-x: auto; }
+
+  /* Plugins */
+  .plugin-list { list-style: none; margin: 14px 0 0; padding: 0; }
+  .plugin-row { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-top: 1px solid var(--border-soft); }
+  .plugin-row:first-child { border-top: 0; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; }
+  .dot.green { background: var(--green); box-shadow: 0 0 0 4px rgba(55,192,122,.08); }
+  .dot.blue { background: var(--accent); box-shadow: 0 0 0 4px rgba(77,107,254,.1); }
+  .dot.amber { background: var(--amber); box-shadow: 0 0 0 4px rgba(224,163,62,.08); }
+  .dot.red { background: var(--red); box-shadow: 0 0 0 4px rgba(225,91,91,.08); }
+  .dot.gray { background: var(--muted-2); box-shadow: 0 0 0 4px rgba(139,148,169,.08); }
+  .plugin-main { min-width: 0; flex: 1; }
+  .plugin-main strong { display: block; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .plugin-main small { display: block; color: var(--muted-2); font-size: 11px; }
+  .row-action { border: 0; background: transparent; color: #b9c6ff; font-size: 11px; padding: 3px 4px; border-radius: 6px; cursor: pointer; }
+  .row-action:hover { background: rgba(77,107,254,.12); }
+  .tag { font-size: 10.5px; padding: 2px 7px; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; }
+  .tag.ok { color: #8fe3b6; background: rgba(55,192,122,.1); border-color: rgba(55,192,122,.22); }
+  .tag.up { color: #b9c6ff; background: rgba(77,107,254,.1); border-color: rgba(77,107,254,.22); }
+  .tag.off { color: #f0c37e; background: rgba(224,163,62,.1); border-color: rgba(224,163,62,.22); }
+  .tag.bad { color: #f0a0a0; background: rgba(225,91,91,.1); border-color: rgba(225,91,91,.22); }
+  .tag.gray { color: var(--muted); background: rgba(139,148,169,.1); border-color: rgba(139,148,169,.22); }
+
+  /* Channel card */
+  .segmented { display: flex; padding: 3px; border-radius: 10px; background: rgba(0,0,0,.22); border: 1px solid var(--border-soft); margin: 12px 0 14px; }
+  .segmented button { flex: 1; height: 30px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
+  .segmented button.active { background: rgba(77,107,254,.16); color: #c7d2ff; box-shadow: 0 1px 0 rgba(255,255,255,.04) inset; }
+  .segmented button:disabled { opacity: .45; cursor: not-allowed; }
+  .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border-soft); }
+  .switch-row:first-of-type { border-top: 0; }
+  .switch-row span { font-size: 12px; color: #c3cad9; }
+  .switch-row small { display: block; color: var(--muted-2); font-size: 10.5px; margin-top: 1px; }
+  .switch { position: relative; width: 34px; height: 20px; flex: 0 0 34px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .track { position: absolute; inset: 0; border-radius: 999px; background: #2a3141; transition: background .18s; }
+  .track::after { content: ""; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; border-radius: 50%; background: #8b94a9; transition: transform .18s, background .18s; }
+  .switch input:checked + .track { background: rgba(77,107,254,.55); }
+  .switch input:checked + .track::after { transform: translateX(14px); background: white; }
+  .switch input:disabled + .track { opacity: .45; }
+  .switch input:focus-visible + .track { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+
+  .footnote { margin-top: 18px; color: var(--muted-2); font-size: 11px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .footnote code { color: #aab6d6; background: rgba(255,255,255,.04); padding: 1px 5px; border-radius: 5px; font-size: 10.5px; }
+
+  /* Modal */
+  .modal-backdrop { position: fixed; inset: 0; z-index: 50; background: rgba(4,6,10,.66); backdrop-filter: blur(7px); display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .modal { width: 540px; max-width: 100%; max-height: 88vh; overflow: auto; background: linear-gradient(180deg, #171c28, #11151e); border: 1px solid #2b3346; border-radius: 18px; box-shadow: var(--shadow); }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 0; }
+  .modal-head h3 { margin: 0; font-size: 16px; }
+  .icon-btn { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border); background: rgba(255,255,255,.03); color: var(--muted); cursor: pointer; }
+  .icon-btn:hover { color: var(--text); }
+  .modal-body { padding: 16px 20px 4px; }
+  .summary { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; padding: 13px 14px; border-radius: 12px; background: rgba(0,0,0,.18); border: 1px solid var(--border-soft); }
+  .summary .k { color: var(--muted-2); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; }
+  .summary .v { font-size: 12.5px; color: #dbe1ee; margin-top: 1px; overflow-wrap: anywhere; }
+  .section-title { margin: 18px 0 8px; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .section-title::before { content: ""; width: 3px; height: 12px; border-radius: 2px; background: var(--accent); }
+  .change-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border-soft); border-radius: 12px; overflow: hidden; }
+  .change-list li { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border-top: 1px solid var(--border-soft); font-size: 12px; }
+  .change-list li:first-child { border-top: 0; }
+  .change-list .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .change-list .ver { color: var(--muted); font-size: 11px; }
+  .notice { margin-top: 14px; padding: 11px 12px; border-radius: 11px; border: 1px solid rgba(224,163,62,.28); background: rgba(224,163,62,.07); color: #e9c78f; font-size: 12px; }
+  .notice b { color: #f3d39b; }
+  .notice.info { border-color: rgba(77,107,254,.28); background: rgba(77,107,254,.07); color: #c3cff2; }
+  .notice.info b { color: #dbe3ff; }
+  .notice.bad { border-color: rgba(225,91,91,.3); background: rgba(225,91,91,.08); color: #efb3b3; }
+  .notice.bad b { color: #f6c7c7; }
+  .notice ul { margin: 7px 0 0; padding-left: 18px; line-height: 1.75; }
+  .tasks { margin-top: 14px; padding: 11px 12px; border-radius: 11px; border: 1px solid var(--border-soft); background: rgba(255,255,255,.025); font-size: 12px; color: var(--muted); }
+  .tasks b { color: #dbe1ee; }
+  .ack { display: flex; align-items: flex-start; gap: 8px; margin: 14px 0 4px; font-size: 12px; color: #c3cad9; cursor: pointer; }
+  .ack input { width: 15px; height: 15px; margin: 1px 0 0; accent-color: var(--accent); }
+  .ack input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 16px; height: 16px; flex: 0 0 16px; margin: 2px 0 0; border: 1px solid #39435a; border-radius: 4px; background: rgba(255,255,255,.04); cursor: pointer; position: relative; }
+  .ack input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+  .ack input[type="checkbox"]:checked::after { content: ""; position: absolute; left: 4px; top: 1px; width: 5px; height: 9px; border: 2px solid #fff; border-top: 0; border-left: 0; transform: rotate(45deg); }
+  .ack input[type="checkbox"]:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+  .modal-foot { display: flex; justify-content: flex-end; gap: 9px; padding: 16px 20px 20px; }
+
+  /* Dev bar */
+  .devbar { position: fixed; right: 16px; bottom: 16px; z-index: 40; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; background: rgba(15,18,26,.94); border: 1px solid var(--border); box-shadow: 0 12px 30px rgba(0,0,0,.4); backdrop-filter: blur(12px); flex-wrap: wrap; justify-content: flex-end; max-width: calc(100vw - 32px); }
+  .devbar .dev-label { font-size: 10px; color: var(--muted-2); padding: 0 4px; letter-spacing: .08em; text-transform: uppercase; }
+  .dev-field { display: flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--muted-2); }
+  .dev-field select { height: 26px; max-width: 200px; border-radius: 7px; border: 1px solid var(--border); background: #11151e; color: #c7cede; font-size: 11px; padding: 0 6px; }
+  .dev-check { display: flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--muted-2); cursor: pointer; }
+  .dev-check input { accent-color: var(--accent); }
+  .devbar button { height: 26px; padding: 0 9px; border-radius: 7px; border: 1px solid transparent; background: transparent; color: var(--muted); font-size: 10.5px; cursor: pointer; }
+  .devbar button:hover { background: rgba(255,255,255,.05); color: var(--text); }
+
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(10px); z-index: 70; background: #1b2130; border: 1px solid #2e374a; color: #dfe5f2; padding: 9px 14px; border-radius: 10px; font-size: 12px; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; box-shadow: var(--shadow); max-width: min(560px, 90vw); }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 980px) {
+    .sidebar { display: none; }
+    .main { padding: 22px 20px 132px; }
+    .grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    .version-block strong { font-size: 17px; }
+    .meta { margin-left: 0; }
+    .modal { border-radius: 14px; }
+    .summary { grid-template-columns: 1fr; }
+    .devbar { left: 12px; right: 12px; justify-content: flex-start; }
+    .dev-field select { max-width: 168px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; }
+    .progress.indeterminate > div { width: 35% !important; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mark"></div>
+      <div class="brand-text">
+        <strong>DeepSeek Harness</strong>
+        <span>Everything is a plugin</span>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-label">Workspace</div>
+      <a class="nav-item" href="#" data-nav>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v14H4z"/><path d="M4 9h16"/></svg>
+        通用
+      </a>
+      <a class="nav-item" href="#" data-nav>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v18"/><path d="M5 8h14"/><path d="M5 16h14"/></svg>
+        模型
+      </a>
+      <a class="nav-item" href="#" data-nav>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 3h6v4H9z"/><path d="M4 9h16v6H4z"/><path d="M9 17h6v4H9z"/></svg>
+        插件
+      </a>
+      <a class="nav-item active" href="#" data-nav>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
+        关于
+        <span class="nav-dot" id="navDot" hidden></span>
+      </a>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-label">System</div>
+      <a class="nav-item" href="#" data-nav>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg>
+        安全
+      </a>
+      <a class="nav-item" href="#" data-nav>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>
+        日志
+      </a>
+    </div>
+
+    <div class="sidebar-foot" id="sidebarVersion">
+      dsh 0.2.2-rc.1 · web profile
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="crumbs">设置 <span style="opacity:.5">/</span> <b>关于</b></div>
+      <div class="top-status"><span class="pulse" id="serviceDot"></span> <span id="serviceText">更新服务正常</span></div>
+    </div>
+
+    <div class="page-head">
+      <h1>关于 DeepSeek Harness</h1>
+      <p>版本更新会同时校验已安装插件，确保它们在新的 Harness 上仍可加载。</p>
+    </div>
+
+    <div class="grid">
+      <div class="col">
+        <section class="card" id="updateCard" aria-busy="false">
+          <div class="card-head">
+            <div>
+              <h2>版本更新</h2>
+              <p class="sub">一个按钮完成检查、兼容解析、下载、安装与回滚。</p>
+            </div>
+            <span class="badge" id="badge">有新版本</span>
+          </div>
+
+          <div class="version-row">
+            <div class="version-block">
+              <span class="label">当前版本</span>
+              <strong id="currentVersion">0.2.2-rc.1</strong>
+            </div>
+            <div class="arrow" id="versionArrow">→</div>
+            <div class="version-block" id="targetBlock">
+              <span class="label">目标版本</span>
+              <strong class="accent" id="latestVersion">0.2.3</strong>
+            </div>
+            <div class="meta">
+              <span id="channelMeta">正式版</span>
+              <span id="sizeMeta">38.4 MB</span>
+            </div>
+          </div>
+
+          <p class="desc" id="updateDesc">包含 <b>12 个插件适配</b>，预计 2 分钟完成；更新前会建立回滚点。</p>
+
+          <div class="progress-wrap" id="progressWrap" hidden>
+            <div class="progress-top">
+              <span id="stageLabel">正在下载</span>
+              <span id="progressPct">0%</span>
+            </div>
+            <div class="progress" id="progress" role="progressbar" aria-labelledby="stageLabel" aria-valuemin="0" aria-valuemax="100">
+              <div id="progressBar"></div>
+            </div>
+            <div class="steps" id="steps">
+              <span class="step" data-step="prepare">解析兼容性</span>
+              <span class="step" data-step="download">下载</span>
+              <span class="step" data-step="verify">校验</span>
+              <span class="step" data-step="drain">等待任务</span>
+              <span class="step" data-step="activate">切换</span>
+              <span class="step" data-step="health">自检</span>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn primary" id="primaryBtn" aria-describedby="updateDesc">更新到 0.2.3</button>
+            <button class="btn ghost" id="secondaryBtn" data-action="notes">更新说明</button>
+            <button class="btn subtle" id="rollbackBtn" hidden>回滚</button>
+          </div>
+
+          <div class="message" id="message" role="status" aria-live="polite" hidden></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <h2>插件兼容性</h2>
+              <p class="sub">更新前自动解析；不兼容插件会被禁用，而不是删除。</p>
+            </div>
+            <span class="badge gray" id="pluginBadge">12 个将更新</span>
+          </div>
+          <ul class="plugin-list" id="pluginList"></ul>
+          <div class="footnote" id="pluginFoot"></div>
+        </section>
+      </div>
+
+      <div class="col">
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <h2>更新渠道</h2>
+              <p class="sub">不跨渠道晋升；正式版优先稳定版本。</p>
+            </div>
+          </div>
+          <div class="segmented" id="channelSeg">
+            <button class="active" data-channel="stable" aria-pressed="true">正式版</button>
+            <button data-channel="nightly" aria-pressed="false">开发版</button>
+          </div>
+          <div class="switch-row">
+            <div><span>自动检查更新</span><small>启动后 30 秒、之后每 6 小时</small></div>
+            <label class="switch"><input type="checkbox" id="autoCheck" checked aria-label="自动检查更新"><span class="track"></span></label>
+          </div>
+          <div class="switch-row">
+            <div><span>无任务时自动安装</span><small>跳过确认，但失败仍会回滚并通知</small></div>
+            <label class="switch"><input type="checkbox" id="unattended" aria-label="无任务时自动安装"><span class="track"></span></label>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <h2>安全与回滚</h2>
+              <p class="sub">双阶段提交 + 独立 watchdog。</p>
+            </div>
+          </div>
+          <div class="plugin-list" style="margin-top:4px">
+            <div class="plugin-row">
+              <span class="dot green"></span>
+              <div class="plugin-main"><strong>更新前建立回滚点</strong><small>profile / lockfile / patch 全量快照</small></div>
+            </div>
+            <div class="plugin-row">
+              <span class="dot green"></span>
+              <div class="plugin-main"><strong>自检失败自动回滚</strong><small>启动日志、版本、插件加载三项检查</small></div>
+            </div>
+            <div class="plugin-row">
+              <span class="dot green"></span>
+              <div class="plugin-main"><strong>保留上一版 24 小时</strong><small>可随时回滚；之后保留重装说明</small></div>
+            </div>
+          </div>
+          <div class="footnote">
+            日志：<code>~/.dsh/logs/update.log</code>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="devbar" id="devbar">
+  <span class="dev-label">Prototype</span>
+  <label class="dev-field">状态
+    <select id="devState" aria-label="演示状态">
+      <option value="idle">idle · 空闲</option>
+      <option value="checking">checking · 检查中</option>
+      <option value="up-to-date">up-to-date · 已是最新</option>
+      <option value="available" selected>available · 有更新</option>
+      <option value="available-incompatible">available-incompatible · 不兼容</option>
+      <option value="mandatory">mandatory · 强制更新</option>
+      <option value="preparing">preparing · 准备中</option>
+      <option value="downloading">downloading · 下载中</option>
+      <option value="verifying">verifying · 验证中</option>
+      <option value="staged">staged · 等待重启</option>
+      <option value="draining">draining · 等待任务</option>
+      <option value="activating">activating · 切换中</option>
+      <option value="succeeded">succeeded · 成功</option>
+      <option value="succeeded-partial">succeeded · 部分成功</option>
+      <option value="rolled-back">rolled-back · 已回滚</option>
+      <option value="failed">failed · 更新失败</option>
+      <option value="blocked">blocked · 被阻断</option>
+      <option value="safe-mode">safe-mode · 安全模式</option>
+    </select>
+  </label>
+  <label class="dev-field">故障
+    <select id="devFault" aria-label="故障注入">
+      <option value="none">无</option>
+      <option value="check">检查失败</option>
+      <option value="download">下载失败</option>
+      <option value="health">自检失败 → 回滚</option>
+      <option value="rollback-fail">回滚失败 → 安全模式</option>
+    </select>
+  </label>
+  <label class="dev-check"><input type="checkbox" id="devTasks" checked> 有运行任务</label>
+  <button id="devReset">重置</button>
+</div>
+
+<div class="modal-backdrop" id="modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-describedby="modalBody" tabindex="-1">
+    <div class="modal-head">
+      <h3 id="modalTitle">更新到 0.2.3</h3>
+      <button class="icon-btn" id="closeModal" aria-label="关闭">×</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <div id="summaryWrap">
+        <div class="summary">
+          <div><div class="k">当前版本</div><div class="v" id="mCurrent">0.2.2-rc.1</div></div>
+          <div><div class="k" id="mTargetLabel">目标版本</div><div class="v" id="mTarget">0.2.3（正式版）</div></div>
+          <div><div class="k">下载大小</div><div class="v" id="mSize">38.4 MB</div></div>
+          <div><div class="k">预计耗时</div><div class="v" id="mEta">约 2 分钟</div></div>
+        </div>
+      </div>
+
+      <div id="changesWrap" hidden>
+        <div class="section-title">插件变更</div>
+        <ul class="change-list" id="modalChanges"></ul>
+      </div>
+
+      <div class="notice" id="modalWarning" hidden></div>
+      <div class="tasks" id="modalTasks" hidden></div>
+
+      <label class="ack" id="ackRow" hidden>
+        <input type="checkbox" id="ack">
+        <span id="ackText"></span>
+      </label>
+
+      <div class="notice" id="modalNote" hidden></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" id="cancelModal">取消</button>
+      <button class="btn primary" id="confirmBtn">开始更新</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var OLD_VERSION = '0.2.2-rc.1';
+  var RESCUE_CMD = 'dsh rescue --from-default-profile web';
+
+  var CHANNELS = {
+    stable: { key: 'stable', label: '正式版', version: '0.2.3', size: '38.4 MB', eta: '约 2 分钟' },
+    nightly: { key: 'nightly', label: '开发版', version: '0.2.3-nightly.20261107', size: '41.2 MB', eta: '约 3 分钟' }
+  };
+
+  var els = {
+    card: document.getElementById('updateCard'),
+    badge: document.getElementById('badge'),
+    currentVersion: document.getElementById('currentVersion'),
+    latestVersion: document.getElementById('latestVersion'),
+    versionArrow: document.getElementById('versionArrow'),
+    targetBlock: document.getElementById('targetBlock'),
+    channelMeta: document.getElementById('channelMeta'),
+    sizeMeta: document.getElementById('sizeMeta'),
+    updateDesc: document.getElementById('updateDesc'),
+    progressWrap: document.getElementById('progressWrap'),
+    progress: document.getElementById('progress'),
+    progressBar: document.getElementById('progressBar'),
+    stageLabel: document.getElementById('stageLabel'),
+    progressPct: document.getElementById('progressPct'),
+    steps: document.getElementById('steps'),
+    primaryBtn: document.getElementById('primaryBtn'),
+    secondaryBtn: document.getElementById('secondaryBtn'),
+    rollbackBtn: document.getElementById('rollbackBtn'),
+    message: document.getElementById('message'),
+    pluginBadge: document.getElementById('pluginBadge'),
+    pluginList: document.getElementById('pluginList'),
+    pluginFoot: document.getElementById('pluginFoot'),
+    sidebarVersion: document.getElementById('sidebarVersion'),
+    navDot: document.getElementById('navDot'),
+    serviceDot: document.getElementById('serviceDot'),
+    serviceText: document.getElementById('serviceText'),
+    channelSeg: document.getElementById('channelSeg'),
+    autoCheck: document.getElementById('autoCheck'),
+    unattended: document.getElementById('unattended'),
+    modal: document.getElementById('modal'),
+    modalTitle: document.getElementById('modalTitle'),
+    summaryWrap: document.getElementById('summaryWrap'),
+    mCurrent: document.getElementById('mCurrent'),
+    mTargetLabel: document.getElementById('mTargetLabel'),
+    mTarget: document.getElementById('mTarget'),
+    mSize: document.getElementById('mSize'),
+    mEta: document.getElementById('mEta'),
+    changesWrap: document.getElementById('changesWrap'),
+    modalChanges: document.getElementById('modalChanges'),
+    modalWarning: document.getElementById('modalWarning'),
+    modalTasks: document.getElementById('modalTasks'),
+    ackRow: document.getElementById('ackRow'),
+    ack: document.getElementById('ack'),
+    ackText: document.getElementById('ackText'),
+    modalNote: document.getElementById('modalNote'),
+    cancelModal: document.getElementById('cancelModal'),
+    confirmBtn: document.getElementById('confirmBtn'),
+    closeModal: document.getElementById('closeModal'),
+    toast: document.getElementById('toast'),
+    devState: document.getElementById('devState'),
+    devFault: document.getElementById('devFault'),
+    devTasks: document.getElementById('devTasks'),
+    devReset: document.getElementById('devReset')
+  };
+
+  var APP = {
+    state: 'available',
+    channel: 'stable',
+    currentVersion: OLD_VERSION,
+    previousVersion: OLD_VERSION,
+    plan: null,
+    runPlan: null,
+    checkResult: null,
+    progress: 0,
+    stageLabel: '',
+    step: 0,
+    done: 0,
+    running: false,
+    cancellable: false,
+    runMandatory: false,
+    runId: 0,
+    hasTasks: true,
+    fault: 'none',
+    skipped: null,
+    error: null,
+    modalMode: null,
+    lastFocus: null,
+    restarting: false
+  };
+
+  var uiTimer = null;
+  var toastTimer = null;
+
+  function $(sel) { return document.querySelector(sel); }
+  function esc(value) {
+    return String(value).replace(/[&<>"']/g, function (ch) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+    });
+  }
+  function target() { return CHANNELS[APP.channel]; }
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function alive(id) { return id === APP.runId; }
+
+  function clearUiTimer() {
+    if (uiTimer) { clearTimeout(uiTimer); uiTimer = null; }
+  }
+
+  function plugin(key, name, from, to, state, note, tag, tone) {
+    return { key: key, name: name, from: from, to: to, state: state, note: note, tag: tag, tone: tone, restorable: false };
+  }
+
+  function planNormal(t) {
+    return {
+      kind: 'normal', target: t.version,
+      items: [
+        plugin('office', 'dsh-plugin-office', '1.4.2', '1.4.2', 'ok', '1.4.2 · 已适配 ' + t.version, '已适配', 'ok'),
+        plugin('git', 'dsh-plugin-git-review', '0.9.1', '1.0.0', 'update', '0.9.1 → 1.0.0 · 随 Harness 同步更新', '将更新', 'up'),
+        plugin('terminal', '@deepseek-ai/dsh-tool-terminal', OLD_VERSION, t.version, 'core', t.version + ' · 随 Harness 提供', '核心', 'ok'),
+        plugin('legacy', 'dsh-plugin-legacy-notes', '0.4.1', '0.4.1', 'verify', '0.4.1 · 未声明 engines.dsh，将通过启动自检验证', '待验证', 'off')
+      ],
+      updates: 12, keeps: 3, disabled: [], blockers: [], total: 15,
+      foot: '仅显示 4 个代表性插件；其余 11 个已适配。'
+    };
+  }
+
+  function planRisky(t) {
+    return {
+      kind: 'risky', target: t.version,
+      items: [
+        plugin('office', 'dsh-plugin-office', '1.4.2', '1.4.2', 'ok', '1.4.2 · 已适配 ' + t.version, '已适配', 'ok'),
+        plugin('git', 'dsh-plugin-git-review', '0.9.1', '1.0.0', 'update', '0.9.1 → 1.0.0 · 随 Harness 同步更新', '将更新', 'up'),
+        plugin('foo', 'dsh-plugin-foo', '1.2.0', null, 'incompatible', '1.2.0 · 无兼容版本，将被禁用', '不兼容', 'bad'),
+        plugin('bar', 'dsh-plugin-bar', '0.4.1', null, 'incompatible', '0.4.1 · 无兼容版本，将被禁用', '不兼容', 'bad')
+      ],
+      updates: 11, keeps: 2, disabled: ['foo', 'bar'], blockers: [], total: 15,
+      foot: '仅显示 4 个代表性插件；其余 11 个已适配。'
+    };
+  }
+
+  function planBlocked(t) {
+    return {
+      kind: 'blocked', target: t.version,
+      items: [
+        plugin('office', 'dsh-plugin-office', '1.4.2', '1.4.2', 'ok', '1.4.2 · 已适配 ' + t.version, '已适配', 'ok'),
+        plugin('git', 'dsh-plugin-git-review', '0.9.1', '1.0.0', 'update', '0.9.1 → 1.0.0 · 随 Harness 同步更新', '将更新', 'up'),
+        plugin('terminal', '@deepseek-ai/dsh-tool-terminal', OLD_VERSION, null, 'blocked', OLD_VERSION + ' · 核心插件无兼容版本，已阻止更新', '核心阻断', 'bad'),
+        plugin('legacy', 'dsh-plugin-legacy-notes', '0.4.1', '0.4.1', 'verify', '0.4.1 · 未声明 engines.dsh', '待验证', 'off')
+      ],
+      updates: 11, keeps: 3, disabled: [], total: 15,
+      blockers: [
+        { name: '@deepseek-ai/dsh-tool-terminal', version: OLD_VERSION, reason: '核心插件未声明兼容 ' + t.version }
+      ],
+      foot: '核心插件是启动必需项，需先发布兼容版本。'
+    };
+  }
+
+  function planUpToDate(version) {
+    return {
+      kind: 'current', target: version,
+      items: [
+        plugin('office', 'dsh-plugin-office', '1.4.2', '1.4.2', 'ok', '1.4.2 · 已适配当前版本', '已适配', 'ok'),
+        plugin('git', 'dsh-plugin-git-review', '1.0.0', '1.0.0', 'ok', '1.0.0 · 已随 Harness 更新', '已更新', 'ok'),
+        plugin('terminal', '@deepseek-ai/dsh-tool-terminal', version, version, 'core', version + ' · 随 Harness 提供', '核心', 'ok'),
+        plugin('legacy', 'dsh-plugin-legacy-notes', '0.4.1', '0.4.1', 'ok', '0.4.1 · 启动自检通过', '已验证', 'ok')
+      ],
+      updates: 0, keeps: 15, disabled: [], blockers: [], total: 15,
+      foot: '全部 15 个插件均已适配。'
+    };
+  }
+
+  function planSafe(t) {
+    return {
+      kind: 'safe', target: t.version,
+      items: [
+        plugin('terminal', '@deepseek-ai/dsh-tool-terminal', APP.currentVersion, APP.currentVersion, 'core', APP.currentVersion + ' · 安全模式仅加载核心', '核心', 'ok'),
+        plugin('office', 'dsh-plugin-office', '1.4.2', null, 'unloaded', '1.4.2 · 安全模式下未加载', '未加载', 'gray'),
+        plugin('git', 'dsh-plugin-git-review', '1.0.0', null, 'unloaded', '1.0.0 · 安全模式下未加载', '未加载', 'gray'),
+        plugin('legacy', 'dsh-plugin-legacy-notes', '0.4.1', null, 'unloaded', '0.4.1 · 安全模式下未加载', '未加载', 'gray')
+      ],
+      updates: 0, keeps: 1, disabled: [], blockers: [], total: 15,
+      foot: '安全模式只加载核心插件，便于导出诊断与修复。'
+    };
+  }
+
+  function finalize(plan) {
+    var items = plan.items.map(function (p) {
+      if (p.state === 'incompatible') {
+        return Object.assign({}, p, {
+          state: 'disabled', tag: '已禁用', tone: 'bad',
+          note: p.from + ' · 已禁用（无兼容版本）', restorable: true
+        });
+      }
+      if (p.state === 'update') {
+        return Object.assign({}, p, {
+          state: 'ok', tag: '已更新', tone: 'ok', note: '1.0.0 · 已随 Harness 更新'
+        });
+      }
+      if (p.state === 'verify') {
+        return Object.assign({}, p, {
+          state: 'ok', tag: '已验证', tone: 'ok', note: '0.4.1 · 启动自检通过'
+        });
+      }
+      if (p.state === 'core') {
+        return Object.assign({}, p, { note: plan.target + ' · 随 Harness 提供' });
+      }
+      return Object.assign({}, p, { tag: '已适配', tone: 'ok', note: p.from + ' · 已适配 ' + plan.target });
+    });
+    return Object.assign({}, plan, {
+      items: items,
+      foot: plan.disabled.length ? '仅显示 4 个代表性插件；被禁用的插件已保留在磁盘。' : '仅显示 4 个代表性插件。'
+    });
+  }
+
+  function downloadError(t) {
+    return {
+      code: 'UPD-401',
+      title: '更新未开始',
+      body: '无法下载 ' + t.version + '：连接 npm registry 超时。当前版本 ' + APP.currentVersion + ' 未做任何更改。'
+    };
+  }
+
+  function rollbackError(t) {
+    return {
+      code: 'UPD-502',
+      title: '已回滚到 ' + APP.currentVersion,
+      body: '原因：新版本 ' + t.version + ' 启动自检未通过（插件加载超时）。已自动恢复更新前的配置与插件，未丢失数据。'
+    };
+  }
+
+  function safeError() {
+    return {
+      code: 'UPD-601',
+      title: '自动回滚失败',
+      body: 'Harness 可能无法启动。请先备份 $DSH_HOME，然后执行修复命令。'
+    };
+  }
+
+  function setBadge(text, tone) {
+    els.badge.textContent = text;
+    els.badge.className = 'badge' + (tone ? ' ' + tone : '');
+  }
+
+  function setPrimary(label, enabled, busy) {
+    els.primaryBtn.textContent = label;
+    els.primaryBtn.disabled = !enabled;
+    if (busy) { els.primaryBtn.setAttribute('aria-busy', 'true'); }
+    else { els.primaryBtn.removeAttribute('aria-busy'); }
+  }
+
+  function setSecondary(label, enabled, action) {
+    if (!label) { els.secondaryBtn.hidden = true; return; }
+    els.secondaryBtn.hidden = false;
+    els.secondaryBtn.textContent = label;
+    els.secondaryBtn.disabled = !enabled;
+    els.secondaryBtn.dataset.action = action || 'notes';
+  }
+
+  function setRollback(label) {
+    if (!label) { els.rollbackBtn.hidden = true; return; }
+    els.rollbackBtn.hidden = false;
+    els.rollbackBtn.textContent = label;
+  }
+
+  function setVersionView(current, latest) {
+    els.currentVersion.textContent = current;
+    var hasTarget = !!latest;
+    els.versionArrow.hidden = !hasTarget;
+    els.targetBlock.hidden = !hasTarget;
+    els.sizeMeta.hidden = !hasTarget;
+    if (hasTarget) { els.latestVersion.textContent = latest; }
+  }
+
+  function setMeta(label) {
+    els.channelMeta.textContent = label;
+  }
+
+  function setSteps(active, done) {
+    var steps = els.steps.querySelectorAll('.step');
+    Array.prototype.forEach.call(steps, function (el, i) {
+      el.classList.remove('active', 'done');
+      if (i < done) { el.classList.add('done'); }
+      if (i === active) { el.classList.add('active'); }
+    });
+  }
+
+  function showProgress(pct, label) {
+    els.progressWrap.hidden = false;
+    var indeterminate = pct === null;
+    els.progress.classList.toggle('indeterminate', indeterminate);
+    if (indeterminate) {
+      els.progressBar.style.width = '35%';
+      els.progressPct.textContent = '…';
+      els.progress.removeAttribute('aria-valuenow');
+      els.progress.setAttribute('aria-valuetext', label || '正在处理');
+    } else {
+      els.progressBar.style.width = pct + '%';
+      els.progressPct.textContent = Math.round(pct) + '%';
+      els.progress.setAttribute('aria-valuenow', String(Math.round(pct)));
+      els.progress.setAttribute('aria-valuetext', (label || '') + ' ' + Math.round(pct) + '%');
+    }
+    els.stageLabel.textContent = label || '';
+  }
+
+  function hideProgress() {
+    els.progressWrap.hidden = true;
+    els.progress.classList.remove('indeterminate');
+    els.progressBar.style.width = '0%';
+    els.progressPct.textContent = '0%';
+    els.progress.removeAttribute('aria-valuenow');
+    els.progress.removeAttribute('aria-valuetext');
+  }
+
+  function showMessage(kind, title, body, actions) {
+    els.message.hidden = false;
+    els.message.className = 'message' + (kind ? ' ' + kind : '');
+    els.message.setAttribute('role', kind === 'err' ? 'alert' : 'status');
+    els.message.setAttribute('aria-live', kind === 'err' ? 'assertive' : 'polite');
+    var html = '<strong>' + esc(title) + '</strong>' + body;
+    if (actions && actions.length) {
+      html += '<div class="msg-actions">' + actions.map(function (a) {
+        return '<button type="button" class="btn ' + (a.cls || 'ghost') + '" data-action="' + esc(a.action) + '">' + esc(a.label) + '</button>';
+      }).join('') + '</div>';
+    }
+    els.message.innerHTML = html;
+    Array.prototype.forEach.call(els.message.querySelectorAll('button[data-action]'), function (btn) {
+      btn.addEventListener('click', function () { handleAction(btn.dataset.action); });
+    });
+  }
+
+  function hideMessage() {
+    els.message.hidden = true;
+    els.message.innerHTML = '';
+  }
+
+  function dotClass(p) {
+    if (p.state === 'ok' || p.state === 'core') { return 'green'; }
+    if (p.state === 'update') { return 'blue'; }
+    if (p.state === 'verify') { return 'amber'; }
+    if (p.state === 'incompatible' || p.state === 'blocked' || p.state === 'disabled') { return 'red'; }
+    return 'gray';
+  }
+
+  function renderPlugins(plan) {
+    els.pluginList.innerHTML = plan.items.map(function (p) {
+      return '<li class="plugin-row" data-state="' + esc(p.state) + '">' +
+        '<span class="dot ' + dotClass(p) + '"></span>' +
+        '<div class="plugin-main"><strong>' + esc(p.name) + '</strong><small>' + esc(p.note) + '</small></div>' +
+        (p.restorable ? '<button type="button" class="row-action" data-restore="' + esc(p.name) + '">检查恢复</button>' : '') +
+        '<span class="tag ' + esc(p.tone) + '">' + esc(p.tag) + '</span>' +
+      '</li>';
+    }).join('');
+    els.pluginFoot.textContent = plan.foot || '';
+  }
+
+  function syncChrome() {
+    els.sidebarVersion.textContent = 'dsh ' + APP.currentVersion + ' · web profile';
+    var hasUpdate = ['available', 'available-incompatible', 'mandatory', 'staged'].indexOf(APP.state) !== -1;
+    els.navDot.hidden = !hasUpdate;
+    var degraded = APP.state === 'blocked' || APP.state === 'safe-mode' ||
+      (APP.state === 'failed' && APP.error && /^UPD-10[12]$/.test(APP.error.code));
+    els.serviceDot.className = 'pulse' + (degraded ? ' bad' : '');
+    els.serviceText.textContent = degraded ? '更新服务异常' : '更新服务正常';
+    var devValue = (APP.state === 'succeeded' && APP.plan && APP.plan.disabled.length) ? 'succeeded-partial' : APP.state;
+    if (Array.prototype.some.call(els.devState.options, function (o) { return o.value === devValue; })) {
+      els.devState.value = devValue;
+    }
+    els.devFault.value = APP.fault;
+    els.devTasks.checked = APP.hasTasks;
+  }
+
+  function locked() {
+    return ['checking', 'preparing', 'downloading', 'verifying', 'staged', 'draining', 'activating'].indexOf(APP.state) !== -1;
+  }
+
+  function syncControls() {
+    var isLocked = locked();
+    Array.prototype.forEach.call(els.channelSeg.querySelectorAll('button'), function (b) {
+      b.disabled = isLocked;
+      b.setAttribute('aria-disabled', String(isLocked));
+    });
+    els.autoCheck.disabled = isLocked;
+    els.unattended.disabled = isLocked;
+    els.card.setAttribute('aria-busy', isLocked ? 'true' : 'false');
+  }
+
+  function paint() {
+    clearUiTimer();
+    var st = APP.state;
+    var t = target();
+    var plan = APP.plan || planUpToDate(APP.currentVersion);
+    APP.plan = plan;
+
+    setMeta(t.label);
+    els.sizeMeta.textContent = t.size;
+    els.sizeMeta.hidden = false;
+    setVersionView(APP.currentVersion, t.version);
+    setRollback(null);
+    setSecondary('更新说明', true, 'notes');
+    hideProgress();
+    hideMessage();
+    els.steps.hidden = false;
+
+    if (st === 'idle') {
+      setBadge('待检查', 'gray');
+      setPrimary('检查更新', true);
+      setSecondary('更新说明', true, 'notes');
+      els.updateDesc.textContent = '上次检查：2 分钟前。当前渠道：' + t.label + '。';
+      setVersionView(APP.currentVersion, null);
+      els.pluginBadge.textContent = '上次检查';
+      renderPlugins(planUpToDate(APP.currentVersion));
+    }
+
+    if (st === 'checking') {
+      setBadge('检查中', 'gray');
+      setPrimary('正在检查…', false, true);
+      els.updateDesc.textContent = '正在查询 npm registry 与插件兼容版本…';
+      setVersionView(APP.currentVersion, null);
+      els.pluginBadge.textContent = '检查中';
+      renderPlugins(planUpToDate(APP.currentVersion));
+      showProgress(null, '正在检查更新');
+      els.steps.hidden = true;
+      uiTimer = setTimeout(finishCheck, 1400);
+    }
+
+    if (st === 'up-to-date') {
+      if (APP.skipped) {
+        setBadge('已暂时跳过', 'gray');
+        els.updateDesc.textContent = '已暂时跳过 ' + APP.skipped + '；下次检查会重新评估。当前版本 ' + APP.currentVersion + '。';
+        setPrimary('检查更新', true);
+      } else {
+        setBadge('已是最新', 'green');
+        els.updateDesc.textContent = '当前已是最新（' + APP.currentVersion + '）。上次检查：刚刚。';
+        setPrimary('已是最新', false);
+        uiTimer = setTimeout(function () {
+          if (APP.state === 'up-to-date') { setPrimary('检查更新', true); }
+        }, 3000);
+      }
+      setVersionView(APP.currentVersion, null);
+      els.pluginBadge.textContent = '全部兼容';
+      renderPlugins(planUpToDate(APP.currentVersion));
+    }
+
+    if (st === 'available') {
+      setBadge('有新版本', '');
+      setPrimary('更新到 ' + t.version, true);
+      els.updateDesc.innerHTML = '包含 <b>' + plan.updates + ' 个插件适配</b> · ' + esc(t.size) + ' · ' + esc(t.eta) + '；更新前会建立回滚点。';
+      setVersionView(APP.currentVersion, t.version);
+      els.pluginBadge.textContent = plan.updates + ' 个将更新';
+      renderPlugins(plan);
+    }
+
+    if (st === 'available-incompatible') {
+      var n = plan.disabled.length;
+      setBadge(n + ' 个插件不兼容', 'amber');
+      setPrimary('更新（将禁用 ' + n + ' 个插件）', true);
+      els.updateDesc.innerHTML = '目标版本 ' + esc(t.version) + ' 可用，但 <b>' + n + ' 个插件没有兼容版本</b>；更新后会被禁用，可恢复。';
+      setVersionView(APP.currentVersion, t.version);
+      els.pluginBadge.textContent = n + ' 个不兼容';
+      renderPlugins(plan);
+      var names = plan.items.filter(function (p) { return p.state === 'incompatible'; })
+        .map(function (p) { return esc(p.name) + ' ' + esc(p.from); }).join('、');
+      showMessage('warn', '检测到兼容性风险', names + ' 没有兼容 ' + esc(t.version) + ' 的版本。更新会禁用它们，但不会删除文件。', [
+        { label: '查看详情', action: 'details', cls: 'ghost' }
+      ]);
+    }
+
+    if (st === 'mandatory') {
+      setBadge('必须更新', 'red');
+      setPrimary('立即更新（必需）', true);
+      setSecondary('了解原因', true, 'why-mandatory');
+      els.updateDesc.innerHTML = '该版本包含安全修复；低于 ' + esc(t.version) + ' 的版本将在 7 天后停止同步。更新不可跳过。';
+      setVersionView(APP.currentVersion, t.version);
+      els.pluginBadge.textContent = plan.updates + ' 个将更新';
+      renderPlugins(plan);
+      showMessage('warn', '服务端要求更新', '强制更新由策略下发；下载与安装不可取消，重启前仍会提示中断任务。', []);
+    }
+
+    if (st === 'preparing') {
+      setBadge('准备中', 'gray');
+      setPrimary('正在准备…', false, true);
+      setSecondary('更新说明', false, 'notes');
+      els.updateDesc.innerHTML = '正在解析 <b>核心 + ' + plan.total + ' 个插件</b> 的兼容版本集，校验磁盘与权限并建立回滚点…';
+      setVersionView(APP.currentVersion, t.version);
+      els.pluginBadge.textContent = '解析中';
+      renderPlugins(plan);
+      showProgress(APP.progress, APP.stageLabel || '正在准备');
+      setSteps(APP.step, APP.done);
+    }
+
+    if (st === 'downloading') {
+      setBadge('下载中', '');
+      setPrimary('下载中 ' + Math.round(APP.progress) + '%', false, true);
+      if (APP.runMandatory) { setSecondary(null); } else { setSecondary('取消', true, 'cancel'); }
+      els.updateDesc.textContent = '正在下载 ' + t.version + '（' + t.size + '）…' + (APP.runMandatory ? '强制更新不可取消。' : '');
+      setVersionView(APP.currentVersion, t.version);
+      els.pluginBadge.textContent = '下载中';
+      renderPlugins(plan);
+      showProgress(APP.progress, APP.stageLabel || ('正在下载 ' + t.version));
+      setSteps(1, 1);
+    }
+
+    if (st === 'verifying') {
+      setBadge('验证中', '');
+      setPrimary('正在验证…', false, true);
+      setSecondary(null);
+      els.updateDesc.textContent = '正在校验签名与完整性；通过后等待重启。';
+      setVersionView(APP.currentVersion, t.version);
+      els.pluginBadge.textContent = '校验中';
+      renderPlugins(plan);
+      showProgress(100, APP.stageLabel || '正在验证签名与完整性');
+      setSteps(2, 2);
+    }
+
+    if (st === 'staged') {
+      setBadge('等待重启', '');
+      setPrimary('重启并完成更新', true);
+      setSecondary('稍后', true, 'later');
+      els.updateDesc.innerHTML = '已下载并校验 <b>' + esc(t.version) + '</b>；重启后完成切换。当前版本尚未改动。';
+      setVersionView(APP.currentVersion, t.version);
+      els.pluginBadge.textContent = '已就绪';
+      renderPlugins(plan);
+      showProgress(100, '已就绪，等待重启');
+      setSteps(3, 3);
+      showMessage('', '回滚点已建立', '已保留 ' + esc(APP.previousVersion) + ' 的回滚点；重启前不会改动当前版本。' + (APP.hasTasks ? '重启会中断 2 个 agent 与 1 个后台任务。' : '当前没有运行中任务。'), APP.runMandatory ? [] : [
+        { label: '取消更新', action: 'cancel-staged', cls: 'ghost' }
+      ]);
+    }
+
+    if (st === 'draining') {
+      setBadge('等待任务', 'amber');
+      setPrimary('等待任务结束…', false, true);
+      if (APP.hasTasks) { setSecondary('强制继续', true, 'force'); }
+      else { setSecondary('取消', true, 'cancel-staged'); }
+      els.updateDesc.textContent = APP.hasTasks
+        ? '正在等待 2 个 agent 与 1 个后台任务结束；完成后自动切换。'
+        : '没有运行中任务，正在获取 profile 写锁…';
+      setVersionView(APP.currentVersion, t.version);
+      els.pluginBadge.textContent = '等待任务';
+      renderPlugins(plan);
+      showProgress(100, '等待运行中任务结束');
+      setSteps(3, 3);
+    }
+
+    if (st === 'activating') {
+      var rolling = (APP.stageLabel || '').indexOf('回滚') !== -1;
+      setBadge(rolling ? '正在回滚' : '更新中', rolling ? 'amber' : '');
+      setPrimary(rolling ? '正在恢复更新前状态…' : '正在更新，请勿关闭', false, true);
+      setSecondary(null);
+      els.updateDesc.textContent = rolling
+        ? '自检未通过，正在恢复 profile、lockfile 与插件状态…'
+        : (APP.step === 5 ? '正在启动自检并检查插件加载…' : '正在原子切换版本并写入提交日志…');
+      setVersionView(APP.currentVersion, t.version);
+      els.pluginBadge.textContent = rolling ? '回滚中' : '切换中';
+      renderPlugins(plan);
+      showProgress(100, APP.stageLabel || '正在切换版本');
+      setSteps(APP.step, APP.done);
+    }
+
+    if (st === 'succeeded') {
+      var partial = plan.disabled.length > 0;
+      setBadge(partial ? '已更新 · ' + plan.disabled.length + ' 个插件已禁用' : '已更新', partial ? 'amber' : 'green');
+      setPrimary('已是最新', false);
+      els.updateDesc.innerHTML = partial
+        ? plan.updates + ' 个插件已同步适配；<b>' + plan.disabled.length + ' 个插件已禁用</b>，可恢复。回滚点保留 24 小时。'
+        : plan.updates + ' 个插件已同步适配。回滚点保留 24 小时。';
+      setVersionView(APP.currentVersion, null);
+      els.pluginBadge.textContent = partial ? plan.disabled.length + ' 个已禁用' : '已适配';
+      els.pluginBadge.className = 'badge ' + (partial ? 'amber' : 'gray');
+      renderPlugins(plan);
+      setRollback('回滚到 ' + APP.previousVersion);
+      if (partial) {
+        showMessage('warn', '已更新到 ' + t.version + '，' + plan.disabled.length + ' 个插件被禁用',
+          '插件没有兼容版本，已从当前 profile 禁用但保留在磁盘。发布兼容版本后可恢复，也可回滚到 ' + esc(APP.previousVersion) + '。', [
+            { label: '查看更新说明', action: 'notes', cls: 'ghost' },
+            { label: '恢复插件', action: 'restore', cls: 'ghost' },
+            { label: '回滚', action: 'rollback', cls: 'ghost' }
+          ]);
+      } else {
+        showMessage('ok', '已更新到 ' + t.version,
+          plan.updates + ' 个插件已同步适配；' + plan.keeps + ' 个插件保持兼容；没有插件被禁用。', [
+            { label: '查看更新说明', action: 'notes', cls: 'ghost' },
+            { label: '回滚', action: 'rollback', cls: 'ghost' }
+          ]);
+      }
+    }
+
+    if (st === 'rolled-back') {
+      setBadge('已回滚', 'red');
+      setPrimary('重试更新', true);
+      setSecondary('查看日志', true, 'log');
+      els.updateDesc.textContent = '已回滚到 ' + APP.currentVersion + '；未做任何更改。';
+      setVersionView(APP.currentVersion, null);
+      els.pluginBadge.textContent = '已恢复';
+      els.pluginBadge.className = 'badge gray';
+      renderPlugins(APP.runPlan || planNormal(t));
+      showMessage('err', APP.error.title,
+        (APP.error.code ? '<span class="code">' + esc(APP.error.code) + '</span>' : '') + esc(APP.error.body), [
+          { label: '查看日志', action: 'log', cls: 'ghost' },
+          { label: '重试', action: 'retry', cls: 'ghost' },
+          { label: '暂时跳过', action: 'skip', cls: 'ghost' }
+        ]);
+    }
+
+    if (st === 'failed') {
+      setBadge('更新失败', 'red');
+      setPrimary('重试', true);
+      setSecondary('查看日志', true, 'log');
+      els.updateDesc.textContent = APP.error.code + ' · 当前版本 ' + APP.currentVersion + ' 未做任何更改。';
+      setVersionView(APP.currentVersion, t.version);
+      els.pluginBadge.textContent = '未改动';
+      els.pluginBadge.className = 'badge gray';
+      renderPlugins(APP.runPlan || planNormal(t));
+      showMessage('err', APP.error.title,
+        '<span class="code">' + esc(APP.error.code) + '</span>' + esc(APP.error.body), [
+          { label: '重试', action: 'retry', cls: 'ghost' },
+          { label: '更换镜像', action: 'mirror', cls: 'ghost' },
+          { label: '查看日志', action: 'log', cls: 'ghost' }
+        ]);
+    }
+
+    if (st === 'blocked') {
+      setBadge('无法更新', 'amber');
+      setPrimary('暂不可更新', false);
+      setSecondary('查看阻断原因', true, 'blocked-details');
+      els.updateDesc.innerHTML = '核心插件 <b>@deepseek-ai/dsh-tool-terminal</b> 与新版本不兼容，更新已阻止；当前版本未改动。';
+      setVersionView(APP.currentVersion, t.version);
+      els.pluginBadge.textContent = plan.blockers.length + ' 个核心阻断';
+      els.pluginBadge.className = 'badge red';
+      renderPlugins(plan);
+      showMessage('warn', '更新被阻止', '核心插件是启动必需项。更新会先保留当前版本，等插件发布兼容版本后再试。', [
+        { label: '查看原因', action: 'blocked-details', cls: 'ghost' }
+      ]);
+    }
+
+    if (st === 'safe-mode') {
+      setBadge('安全模式', 'red');
+      setPrimary('复制修复命令', true);
+      setSecondary('打开日志', true, 'log');
+      els.updateDesc.textContent = '更新与自动回滚均失败，已进入安全模式：仅加载核心插件。';
+      setVersionView(APP.currentVersion, null);
+      els.pluginBadge.textContent = '仅核心';
+      els.pluginBadge.className = 'badge red';
+      renderPlugins(planSafe(t));
+      showMessage('err', APP.error.title,
+        '<span class="code">' + esc(APP.error.code) + '</span>' + esc(APP.error.body) +
+        '<pre class="command">' + esc(RESCUE_CMD) + '</pre>', [
+          { label: '复制修复命令', action: 'copy', cls: 'ghost' },
+          { label: '打开日志', action: 'log', cls: 'ghost' }
+        ]);
+    }
+
+    var pluginTone = 'gray';
+    if (st === 'available' || st === 'mandatory') { pluginTone = ''; }
+    if (st === 'available-incompatible') { pluginTone = 'amber'; }
+    if (st === 'succeeded' && plan.disabled.length) { pluginTone = 'amber'; }
+    if (st === 'blocked' || st === 'safe-mode') { pluginTone = 'red'; }
+    els.pluginBadge.className = 'badge' + (pluginTone ? ' ' + pluginTone : '');
+
+    syncChrome();
+    syncControls();
+  }
+
+  function finishCheck() {
+    if (APP.state !== 'checking') { return; }
+    if (APP.fault === 'check') {
+      consumeFault();
+      var t = target();
+      APP.plan = planNormal(t);
+      APP.runPlan = APP.plan;
+      APP.error = { code: 'UPD-101', title: '检查失败', body: '无法连接更新源，请检查网络或代理。当前版本 ' + APP.currentVersion + ' 未做任何更改。' };
+      APP.state = 'failed';
+      paint();
+      return;
+    }
+    var res = APP.checkResult || 'available';
+    APP.checkResult = null;
+    var t2 = target();
+    if (res === 'up-to-date') { APP.plan = planUpToDate(APP.currentVersion); }
+    else if (res === 'available-incompatible') { APP.plan = planRisky(t2); }
+    else if (res === 'mandatory') { APP.plan = planNormal(t2); }
+    else if (res === 'blocked') { APP.plan = planBlocked(t2); }
+    else { APP.plan = planNormal(t2); }
+    APP.state = res;
+    paint();
+  }
+
+  function startCheck() {
+    if (APP.running) { return; }
+    APP.skipped = null;
+    APP.runPlan = null;
+    APP.plan = planUpToDate(APP.currentVersion);
+    APP.checkResult = 'available';
+    APP.state = 'checking';
+    paint();
+  }
+
+  function canUnattended(plan) {
+    return els.unattended.checked && plan.disabled.length === 0 && !APP.hasTasks && APP.state !== 'mandatory';
+  }
+
+  function requestUpdate() {
+    if (APP.running) { return; }
+    if (canUnattended(APP.plan)) {
+      beginUpdate(APP.plan);
+      toast('无人值守：已跳过确认，直接开始更新');
+      return;
+    }
+    openModal('confirm');
+  }
+
+  async function beginUpdate(plan) {
+    if (!plan || APP.running) { return; }
+    APP.plan = plan;
+    APP.runPlan = plan;
+    APP.previousVersion = APP.currentVersion;
+    APP.runMandatory = APP.state === 'mandatory';
+    APP.error = null;
+    APP.skipped = null;
+    APP.progress = 0;
+    APP.running = true;
+    var id = ++APP.runId;
+
+    APP.stageLabel = '正在准备';
+    APP.step = 0; APP.done = 0;
+    APP.state = 'preparing';
+    paint();
+    await sleep(700);
+    if (!alive(id)) { return; }
+
+    var t = target();
+    APP.cancellable = true;
+    APP.progress = 0;
+    APP.stageLabel = '正在下载 ' + t.version;
+    APP.step = 1; APP.done = 1;
+    APP.state = 'downloading';
+    paint();
+
+    for (var p = 0; p <= 100; p += 4) {
+      if (!alive(id)) { return; }
+      APP.progress = p;
+      APP.stageLabel = '正在下载 ' + t.version;
+      paint();
+      if (p === 60 && APP.fault === 'download') {
+        consumeFault();
+        APP.cancellable = false;
+        APP.running = false;
+        APP.plan = plan;
+        APP.error = downloadError(t);
+        APP.state = 'failed';
+        paint();
+        return;
+      }
+      await sleep(36);
+    }
+    if (!alive(id)) { return; }
+
+    APP.cancellable = false;
+    APP.progress = 100;
+    APP.stageLabel = '正在验证签名与完整性';
+    APP.step = 2; APP.done = 2;
+    APP.state = 'verifying';
+    paint();
+    await sleep(750);
+    if (!alive(id)) { return; }
+
+    APP.stageLabel = '已就绪，等待重启';
+    APP.step = 3; APP.done = 3;
+    APP.state = 'staged';
+    paint();
+
+    if (!APP.runMandatory && canUnattended(plan)) {
+      await sleep(800);
+      if (!alive(id)) { return; }
+      restartFlow();
+    }
+  }
+
+  async function restartFlow() {
+    if (APP.restarting) { return; }
+    APP.restarting = true;
+    APP.running = true;
+    APP.state = 'draining';
+    APP.stageLabel = '等待运行中任务结束';
+    APP.step = 3; APP.done = 3;
+    paint();
+    await sleep(APP.hasTasks ? 900 : 450);
+    if (!alive(APP.runId)) { APP.restarting = false; return; }
+    await activateAndVerify();
+    APP.restarting = false;
+  }
+
+  async function activateAndVerify() {
+    var id = APP.runId;
+    APP.state = 'activating';
+    APP.stageLabel = '正在切换版本';
+    APP.step = 4; APP.done = 4;
+    paint();
+    await sleep(700);
+    if (!alive(id)) { return; }
+
+    APP.stageLabel = '正在启动自检';
+    APP.step = 5; APP.done = 5;
+    paint();
+    await sleep(800);
+    if (!alive(id)) { return; }
+
+    if (APP.fault === 'health' || APP.fault === 'rollback-fail') {
+      var fault = APP.fault;
+      consumeFault();
+      await doRollback(fault);
+      return;
+    }
+    succeed();
+  }
+
+  async function doRollback(fault) {
+    var id = APP.runId;
+    APP.stageLabel = '自检未通过，正在回滚';
+    APP.step = 5; APP.done = 5;
+    APP.state = 'activating';
+    paint();
+    await sleep(900);
+    if (!alive(id)) { return; }
+
+    if (fault === 'rollback-fail') {
+      APP.running = false;
+      APP.runMandatory = false;
+      APP.plan = planSafe(target());
+      APP.error = safeError();
+      APP.state = 'safe-mode';
+      paint();
+      toast('自动回滚失败，已进入安全模式');
+      return;
+    }
+
+    APP.currentVersion = APP.previousVersion;
+    APP.plan = APP.runPlan;
+    APP.error = rollbackError(target());
+    APP.running = false;
+    APP.runMandatory = false;
+    APP.state = 'rolled-back';
+    paint();
+    toast('已自动回滚，未丢失数据');
+  }
+
+  async function runRollback() {
+    if (APP.running) { return; }
+    APP.running = true;
+    var id = ++APP.runId;
+    APP.stageLabel = '正在回滚到 ' + APP.previousVersion;
+    APP.step = 5; APP.done = 5;
+    APP.state = 'activating';
+    paint();
+    await sleep(900);
+    if (!alive(id)) { return; }
+    APP.currentVersion = APP.previousVersion;
+    APP.plan = APP.runPlan || APP.plan;
+    APP.error = { code: null, title: '已回滚到 ' + APP.currentVersion, body: '已恢复更新前的配置与插件；未丢失数据。' };
+    APP.running = false;
+    APP.runMandatory = false;
+    APP.state = 'rolled-back';
+    paint();
+    toast('已回滚到 ' + APP.currentVersion);
+  }
+
+  function succeed() {
+    var plan = APP.runPlan;
+    APP.currentVersion = plan.target;
+    APP.plan = finalize(plan);
+    APP.running = false;
+    APP.cancellable = false;
+    APP.runMandatory = false;
+    APP.state = 'succeeded';
+    paint();
+    if (plan.disabled.length) {
+      toast('已更新，' + plan.disabled.length + ' 个插件被禁用');
+    } else {
+      toast('已更新到 ' + plan.target);
+    }
+  }
+
+  function cancelUpdate() {
+    if (APP.runMandatory) { toast('强制更新不可取消'); return; }
+    var cancellableState = ['downloading', 'staged'].indexOf(APP.state) !== -1;
+    if (APP.running && !APP.cancellable && !cancellableState) { return; }
+    if (!APP.running && APP.state !== 'downloading' && APP.state !== 'staged') { return; }
+    APP.runId++;
+    APP.running = false;
+    APP.cancellable = false;
+    APP.runMandatory = false;
+    APP.progress = 0;
+    APP.state = 'available';
+    APP.plan = APP.runPlan || planNormal(target());
+    APP.error = null;
+    paint();
+    toast('已取消，未做任何更改');
+  }
+
+  function skipVersion() {
+    APP.skipped = target().version;
+    APP.plan = planUpToDate(APP.currentVersion);
+    APP.state = 'up-to-date';
+    APP.error = null;
+    APP.running = false;
+    paint();
+    toast('已暂时跳过 ' + APP.skipped);
+  }
+
+  function consumeFault() {
+    APP.fault = 'none';
+    els.devFault.value = 'none';
+  }
+
+  function copyCommand() {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(RESCUE_CMD).then(function () {
+        toast('修复命令已复制');
+      }).catch(function () {
+        toast('复制失败，请手动执行：' + RESCUE_CMD);
+      });
+    } else {
+      toast('请手动执行：' + RESCUE_CMD);
+    }
+  }
+
+  function handleAction(action) {
+    if (action === 'retry') {
+      beginUpdate(APP.runPlan || APP.plan);
+      return;
+    }
+    if (action === 'rollback') { openModal('rollback'); return; }
+    if (action === 'log') { toast('已打开 ~/.dsh/logs/update.log'); return; }
+    if (action === 'notes') { openModal('notes'); return; }
+    if (action === 'restore') {
+      toast('已查询 registry：' + target().version + ' 暂无插件兼容版本，发布后可一键恢复');
+      return;
+    }
+    if (action === 'copy') { copyCommand(); return; }
+    if (action === 'mirror') { toast('已切换到镜像源 npmmirror.com（演示）'); return; }
+    if (action === 'skip') { skipVersion(); return; }
+    if (action === 'details') { openModal('confirm'); return; }
+    if (action === 'blocked-details') { openModal('blocked'); return; }
+    if (action === 'why-mandatory') { toast('策略要求：0.2.2 及以下版本 7 天后停止同步'); return; }
+    if (action === 'cancel-staged') { cancelUpdate(); return; }
+    if (action === 'force') { forceActivate(); return; }
+  }
+
+  async function forceActivate() {
+    if (APP.state !== 'draining') { return; }
+    APP.runId++;
+    APP.running = true;
+    await activateAndVerify();
+  }
+
+  /* ---------- Modal ---------- */
+
+  function canDismissModal() {
+    return !(APP.modalMode === 'confirm' && APP.state === 'mandatory');
+  }
+
+  function changeRow(tone, name, value) {
+    return '<li><span class="dot ' + tone + '"></span><span class="name">' + esc(name) + '</span><span class="ver">' + esc(value) + '</span></li>';
+  }
+
+  function renderModal(mode) {
+    var t = target();
+    var plan = APP.plan || planNormal(t);
+
+    els.summaryWrap.hidden = true;
+    els.changesWrap.hidden = true;
+    els.modalWarning.hidden = true;
+    els.modalTasks.hidden = true;
+    els.ackRow.hidden = true;
+    els.modalNote.hidden = true;
+    els.modalNote.className = 'notice';
+    els.cancelModal.hidden = false;
+    els.confirmBtn.disabled = false;
+    els.confirmBtn.textContent = '开始更新';
+    els.ack.checked = false;
+
+    if (mode === 'confirm' || mode === 'rollback') {
+      els.summaryWrap.hidden = false;
+      els.mCurrent.textContent = APP.currentVersion;
+      els.mTargetLabel.textContent = mode === 'rollback' ? '回滚到' : '目标版本';
+      els.mTarget.textContent = mode === 'rollback' ? APP.previousVersion : t.version + '（' + t.label + '）';
+      els.mSize.textContent = mode === 'rollback' ? '—' : t.size;
+      els.mEta.textContent = mode === 'rollback' ? '约 30 秒' : t.eta;
+    }
+
+    if (mode === 'confirm') {
+      els.modalTitle.textContent = APP.state === 'mandatory' ? '必须更新到 ' + t.version : '更新到 ' + t.version;
+      els.changesWrap.hidden = false;
+      els.modalChanges.innerHTML =
+        changeRow('green', plan.updates + ' 个插件将同步更新', '已解析') +
+        changeRow('green', plan.keeps + ' 个插件已兼容，保持不变', '无需操作') +
+        (plan.disabled.length ? changeRow('amber', plan.disabled.length + ' 个插件将被禁用', '可恢复') : '');
+
+      if (plan.disabled.length) {
+        var names = plan.items.filter(function (p) { return p.state === 'incompatible'; })
+          .map(function (p) { return esc(p.name) + ' ' + esc(p.from) + ' · 无兼容版本'; }).join('<br>');
+        els.modalWarning.hidden = false;
+        els.modalWarning.innerHTML = '<b>' + plan.disabled.length + ' 个插件暂不兼容。</b> 更新后它们会被禁用，但不会删除；插件发布兼容版本后可一键恢复。<div class="msg-list">' + names + '</div>';
+        els.ackRow.hidden = false;
+        els.ackText.textContent = '我了解将禁用 ' + plan.disabled.length + ' 个插件；更新后可以在插件页恢复。';
+        els.confirmBtn.disabled = true;
+        els.confirmBtn.textContent = '请先确认';
+      }
+
+      if (APP.hasTasks) {
+        els.modalTasks.hidden = false;
+        els.modalTasks.innerHTML = '<b>运行中任务</b><br>2 个 agent 正在运行，1 个后台任务。更新会中断这些任务。';
+      }
+
+      if (APP.state === 'mandatory') {
+        els.cancelModal.hidden = true;
+        els.confirmBtn.textContent = plan.disabled.length ? '请先确认' : '立即更新';
+      }
+    }
+
+    if (mode === 'rollback') {
+      els.modalTitle.textContent = '回滚到 ' + APP.previousVersion;
+      els.changesWrap.hidden = false;
+      els.modalChanges.innerHTML =
+        changeRow('green', '恢复更新前的 profile / lockfile / 插件状态', '可恢复') +
+        changeRow('amber', '当前版本 ' + APP.currentVersion + ' 将被替换', '会中断会话');
+      els.modalNote.hidden = false;
+      els.modalNote.className = 'notice info';
+      els.modalNote.textContent = '回滚会恢复更新前的配置与插件；已禁用的插件会重新启用。回滚点保留 24 小时。';
+      els.confirmBtn.textContent = '回滚';
+    }
+
+    if (mode === 'blocked') {
+      els.modalTitle.textContent = '无法更新到 ' + t.version;
+      els.modalNote.hidden = false;
+      els.modalNote.className = 'notice bad';
+      els.modalNote.innerHTML = '<b>核心插件不兼容</b><br>' +
+        plan.blockers.map(function (b) { return esc(b.name) + ' ' + esc(b.version) + ' · ' + esc(b.reason); }).join('<br>') +
+        '<br><br>更新已阻止，当前版本 ' + esc(APP.currentVersion) + ' 未做任何改动。';
+      els.cancelModal.hidden = true;
+      els.confirmBtn.textContent = '保留当前版本';
+    }
+
+    if (mode === 'notes') {
+      els.modalTitle.textContent = t.version + ' 更新说明';
+      els.modalNote.hidden = false;
+      els.modalNote.className = 'notice info';
+      els.modalNote.innerHTML = '<b>本次更新</b><ul>' +
+        '<li>插件兼容层：更新前解析 engines.dsh 与 peer 依赖，生成可回滚的版本集。</li>' +
+        '<li>启动自检：版本、插件加载与启动日志三项检查，失败自动回滚。</li>' +
+        '<li>安装体验：差量下载、任务排空与重启后切换。</li>' +
+        '</ul>';
+      els.cancelModal.hidden = true;
+      els.confirmBtn.textContent = '知道了';
+    }
+  }
+
+  function openModal(mode) {
+    APP.modalMode = mode;
+    APP.lastFocus = (document.activeElement && document.activeElement !== document.body)
+      ? document.activeElement
+      : els.primaryBtn;
+    renderModal(mode);
+    els.modal.hidden = false;
+    document.body.classList.add('modal-open');
+    setTimeout(function () {
+      var focusTarget = null;
+      if (!els.ackRow.hidden) { focusTarget = els.ack; }
+      else if (!els.confirmBtn.disabled) { focusTarget = els.confirmBtn; }
+      else { focusTarget = els.modal; }
+      if (focusTarget) { focusTarget.focus(); }
+    }, 30);
+  }
+
+  function closeModal() {
+    els.modal.hidden = true;
+    document.body.classList.remove('modal-open');
+    APP.modalMode = null;
+    if (APP.lastFocus && typeof APP.lastFocus.focus === 'function') {
+      APP.lastFocus.focus();
+    }
+  }
+
+  function trapFocus(e) {
+    if (e.key !== 'Tab' || els.modal.hidden) { return; }
+    var nodes = els.modal.querySelectorAll('button, input, a[href], [tabindex]:not([tabindex="-1"])');
+    var focusable = Array.prototype.filter.call(nodes, function (el) {
+      return !el.disabled && !el.hidden && el.getClientRects().length > 0;
+    });
+    if (!focusable.length) { return; }
+    var first = focusable[0];
+    var last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  /* ---------- Demo controls ---------- */
+
+  function applyDemo(name) {
+    APP.runId++;
+    APP.running = false;
+    APP.cancellable = false;
+    APP.runMandatory = false;
+    APP.restarting = false;
+    APP.error = null;
+    APP.skipped = null;
+    clearUiTimer();
+
+    var t = target();
+    APP.previousVersion = OLD_VERSION;
+    APP.currentVersion = OLD_VERSION;
+    APP.progress = 0;
+    APP.step = 0;
+    APP.done = 0;
+    APP.stageLabel = '';
+    APP.plan = planNormal(t);
+    APP.state = name;
+
+    if (name === 'idle' || name === 'checking' || name === 'up-to-date') {
+      APP.plan = planUpToDate(OLD_VERSION);
+      APP.checkResult = name === 'checking' ? 'available' : null;
+    }
+    if (name === 'available-incompatible') { APP.plan = planRisky(t); }
+    if (name === 'mandatory') { APP.plan = planNormal(t); }
+    if (name === 'blocked') { APP.plan = planBlocked(t); }
+    if (name === 'preparing') { APP.stageLabel = '正在准备'; APP.progress = 0; APP.step = 0; APP.done = 0; }
+    if (name === 'downloading') { APP.stageLabel = '正在下载 ' + t.version; APP.progress = 42; APP.step = 1; APP.done = 1; }
+    if (name === 'verifying') { APP.stageLabel = '正在验证签名与完整性'; APP.progress = 100; APP.step = 2; APP.done = 2; }
+    if (name === 'staged') { APP.stageLabel = '已就绪，等待重启'; APP.progress = 100; APP.step = 3; APP.done = 3; }
+    if (name === 'draining') { APP.stageLabel = '等待运行中任务结束'; APP.progress = 100; APP.step = 3; APP.done = 3; }
+    if (name === 'activating') { APP.stageLabel = '正在切换版本'; APP.progress = 100; APP.step = 4; APP.done = 4; }
+    if (name === 'succeeded') {
+      APP.plan = finalize(planNormal(t));
+      APP.currentVersion = t.version;
+    }
+    if (name === 'succeeded-partial') {
+      APP.plan = finalize(planRisky(t));
+      APP.currentVersion = t.version;
+      APP.state = 'succeeded';
+    }
+    if (name === 'rolled-back') {
+      APP.plan = planNormal(t);
+      APP.error = rollbackError(t);
+    }
+    if (name === 'failed') {
+      APP.plan = planNormal(t);
+      APP.error = downloadError(t);
+    }
+    if (name === 'safe-mode') {
+      APP.plan = planSafe(t);
+      APP.error = safeError();
+    }
+
+    APP.runPlan = APP.plan;
+    paint();
+  }
+
+  /* ---------- Events ---------- */
+
+  els.primaryBtn.addEventListener('click', function () {
+    var st = APP.state;
+    if (st === 'idle' || st === 'up-to-date') { startCheck(); return; }
+    if (st === 'available' || st === 'available-incompatible') { requestUpdate(); return; }
+    if (st === 'mandatory') { beginUpdate(APP.plan); return; }
+    if (st === 'staged') { restartFlow(); return; }
+    if (st === 'rolled-back' || st === 'failed') { beginUpdate(APP.runPlan || APP.plan); return; }
+    if (st === 'safe-mode') { copyCommand(); return; }
+  });
+
+  els.secondaryBtn.addEventListener('click', function () {
+    var action = els.secondaryBtn.dataset.action;
+    if (action === 'cancel') { cancelUpdate(); return; }
+    if (action === 'notes') { openModal('notes'); return; }
+    if (action === 'later') { toast('将在下次启动时继续完成更新'); return; }
+    if (action === 'force') { forceActivate(); return; }
+    if (action === 'log') { toast('已打开 ~/.dsh/logs/update.log'); return; }
+    if (action === 'keep') { toast('已保留当前版本，未做任何更改'); return; }
+    if (action === 'blocked-details') { openModal('blocked'); return; }
+    if (action === 'why-mandatory') { handleAction('why-mandatory'); }
+  });
+
+  els.rollbackBtn.addEventListener('click', function () { openModal('rollback'); });
+
+  els.confirmBtn.addEventListener('click', function () {
+    if (els.confirmBtn.disabled) { return; }
+    var mode = APP.modalMode;
+    if (mode === 'confirm') {
+      var plan = APP.plan;
+      closeModal();
+      beginUpdate(plan);
+      return;
+    }
+    if (mode === 'rollback') {
+      closeModal();
+      runRollback();
+      return;
+    }
+    closeModal();
+  });
+
+  els.ack.addEventListener('change', function () {
+    if (APP.plan && APP.plan.disabled.length) {
+      els.confirmBtn.disabled = !els.ack.checked;
+      els.confirmBtn.textContent = els.ack.checked ? (APP.state === 'mandatory' ? '立即更新' : '开始更新') : '请先确认';
+    }
+  });
+
+  els.closeModal.addEventListener('click', function () { if (canDismissModal()) { closeModal(); } });
+  els.cancelModal.addEventListener('click', closeModal);
+  els.modal.addEventListener('click', function (e) {
+    if (e.target === els.modal && canDismissModal()) { closeModal(); }
+  });
+  els.modal.addEventListener('keydown', trapFocus);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !els.modal.hidden && canDismissModal()) { closeModal(); }
+  });
+
+  els.pluginList.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-restore]');
+    if (!btn) { return; }
+    toast('已查询 registry：' + btn.dataset.restore + ' 暂无兼容 ' + target().version + ' 的版本');
+  });
+
+  els.channelSeg.addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-channel]');
+    if (!btn || btn.disabled) { return; }
+    if (locked()) { toast('更新进行中，暂不能切换渠道'); return; }
+    if (!els.modal.hidden) { return; }
+    APP.channel = btn.dataset.channel;
+    Array.prototype.forEach.call(els.channelSeg.querySelectorAll('button'), function (b) {
+      var on = b === btn;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+    APP.skipped = null;
+    APP.error = null;
+    var nextTarget = target();
+    if (APP.currentVersion === nextTarget.version) {
+      APP.plan = planUpToDate(APP.currentVersion);
+      APP.state = 'up-to-date';
+    } else {
+      APP.plan = planNormal(nextTarget);
+      APP.state = 'available';
+    }
+    APP.runPlan = APP.plan;
+    paint();
+    toast(APP.channel === 'stable' ? '已切换到正式版渠道' : '已切换到开发版渠道');
+  });
+
+  els.autoCheck.addEventListener('change', function () {
+    toast(els.autoCheck.checked ? '已开启自动检查：每 6 小时' : '已关闭自动检查');
+  });
+
+  els.unattended.addEventListener('change', function () {
+    if (!els.unattended.checked) { toast('已关闭自动安装'); return; }
+    var plan = APP.plan;
+    var blockedBy = [];
+    if (APP.hasTasks) { blockedBy.push('运行中任务'); }
+    if (plan && plan.disabled.length) { blockedBy.push('不兼容插件'); }
+    toast(blockedBy.length ? '已开启；存在' + blockedBy.join('、') + '，更新前仍需确认' : '已开启；满足条件时将跳过确认');
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-nav]'), function (link) {
+    link.addEventListener('click', function (e) {
+      e.preventDefault();
+      toast('原型仅演示「设置 → 关于」页面');
+    });
+  });
+
+  els.devState.addEventListener('change', function () { applyDemo(els.devState.value); });
+
+  els.devFault.addEventListener('change', function () {
+    APP.fault = els.devFault.value;
+    if (APP.fault !== 'none') {
+      var label = els.devFault.options[els.devFault.selectedIndex].textContent;
+      toast('已注入故障：' + label + '（下一次运行生效）');
+    }
+  });
+
+  els.devTasks.addEventListener('change', function () {
+    APP.hasTasks = els.devTasks.checked;
+    if (APP.modalMode) { renderModal(APP.modalMode); }
+    if (['staged', 'draining', 'available', 'available-incompatible'].indexOf(APP.state) !== -1) { paint(); }
+  });
+
+  els.devReset.addEventListener('click', function () {
+    APP.channel = 'stable';
+    APP.currentVersion = OLD_VERSION;
+    APP.previousVersion = OLD_VERSION;
+    APP.error = null;
+    APP.skipped = null;
+    APP.fault = 'none';
+    APP.hasTasks = true;
+    APP.runId++;
+    APP.running = false;
+    APP.cancellable = false;
+    APP.runMandatory = false;
+    els.unattended.checked = false;
+    els.autoCheck.checked = true;
+    Array.prototype.forEach.call(els.channelSeg.querySelectorAll('button'), function (b) {
+      var on = b.dataset.channel === 'stable';
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+    APP.plan = planNormal(CHANNELS.stable);
+    APP.runPlan = APP.plan;
+    APP.state = 'available';
+    paint();
+    toast('已重置演示状态');
+  });
+
+  els.toast.addEventListener('transitionend', function () {});
+
+  function toast(text) {
+    els.toast.textContent = text;
+    els.toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { els.toast.classList.remove('show'); }, 2600);
+  }
+
+  /* ---------- Boot ---------- */
+
+  APP.plan = planNormal(CHANNELS.stable);
+  APP.runPlan = APP.plan;
+  APP.state = 'available';
+  paint();
+})();
+</script>
+</body>
+</html>

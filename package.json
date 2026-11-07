@@ -1,0 +1,15 @@
+{
+  "name": "dsh-update-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DeepSeek Harness 一键更新的参考实现：Orchestrator、Journal、watchdog、插件门控与多后端",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test",
+    "demo": "node src/cli.mjs demo",
+    "status": "node src/cli.mjs status"
+  }
+}

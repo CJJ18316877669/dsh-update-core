@@ -39,7 +39,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test \"test/*.test.mjs\"",
+    "test": "node scripts/run-tests.mjs",
     "demo": "node src/cli.mjs demo",
     "ui": "node src/cli.mjs ui",
     "status": "node src/cli.mjs status",

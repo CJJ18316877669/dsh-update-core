@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
   resolveDshHome,
@@ -11,15 +12,16 @@ import {
 } from '../src/platform/paths.mjs';
 
 test('paths: dsh home follows explicit > DSH_HOME > ~/.dsh', () => {
-  const home = resolve('C:/Users/example');
+  const home = resolve(tmpdir(), 'dsh-path-home');
+  const explicit = resolve(tmpdir(), 'dsh-explicit-home');
   assert.equal(resolveDshHome({ home, env: {} }), join(home, '.dsh'));
   assert.equal(resolveDshHome({ home, env: { DSH_HOME: '~/custom-dsh' } }), join(home, 'custom-dsh'));
   assert.equal(resolveDshHome({ home, env: { DSH_HOME: '   ' } }), join(home, '.dsh'));
-  assert.equal(resolveDshHome({ home, env: { DSH_HOME: '~/x' }, configured: 'C:/explicit' }), resolve('C:/explicit'));
+  assert.equal(resolveDshHome({ home, env: { DSH_HOME: '~/x' }, configured: explicit }), explicit);
   assert.throws(() => resolveDshHome({ home, env: { DSH_HOME: 'relative/path' } }), /absolute/);
   assert.equal(expandHomePath('~', home), home);
   assert.equal(dshHomeDisplay(join(home, '.dsh'), home), '~/.dsh');
-  assert.equal(dshHomeDisplay(resolve('C:/other'), home), '$DSH_HOME');
+  assert.equal(dshHomeDisplay(resolve(tmpdir(), 'other-home'), home), '$DSH_HOME');
 });
 
 test('paths: profile names cannot alias on case-insensitive filesystems', () => {
@@ -40,7 +42,7 @@ test('paths: Windows path length is checked before writes', () => {
 });
 
 test('paths: derived children cannot escape their root', () => {
-  const root = resolve('C:/dsh-home/updates');
+  const root = resolve(tmpdir(), 'dsh-home', 'updates');
   assert.equal(resolveInside(root, 'backup', 'web'), join(root, 'backup', 'web'));
   assert.throws(() => resolveInside(root, '..', 'profiles'), /escapes root/);
 });

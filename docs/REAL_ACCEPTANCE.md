@@ -65,9 +65,10 @@ The official macOS arm64 DMG is available (`dsh-latest-macos-arm64.dmg`, 268,886
 - Official registry name check: `dsh-update-core` returns HTTP 404, so the unscoped name is available.
 - `npm whoami --registry https://registry.npmjs.org`: `ENEEDAUTH`.
 - No `NODE_AUTH_TOKEN`, `NPM_TOKEN`, or npm auth token in user/global npm configuration.
-- Package contents and `npm pack --dry-run` pass; publication is blocked only by the missing npm account authorization.
+- Package contents and `npm publish --dry-run` pass for `0.2.1`.
+- The repository owner reviewed the authorization request on 2026-11-09 and chose **not to publish at this time**. No token was requested or stored.
 
-Do not store a token in the repository. After `npm login --registry https://registry.npmjs.org`, publish with:
+When publication is approved later, after `npm login --registry https://registry.npmjs.org`, run:
 
 ```bash
 npm publish --access public --registry https://registry.npmjs.org

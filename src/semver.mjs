@@ -20,7 +20,10 @@ export function parse(input) {
   const m = VERSION_RE.exec(raw);
   if (!m) return null;
   const prerelease = m[4] ? m[4].split('.') : [];
-  if (prerelease.some((id) => id === '')) return null;
+  if (prerelease.some((id) => id === '' || (/^\d+$/.test(id) && id.length > 1 && id.startsWith('0')))) {
+    return null;
+  }
+  if ([m[1], m[2], m[3]].some((part) => part.length > 1 && part.startsWith('0'))) return null;
   return {
     major: Number(m[1]),
     minor: Number(m[2]),
@@ -107,6 +110,9 @@ function partial(input) {
   const minorWild = m[2] === undefined || /^[xX*]$/.test(m[2]);
   const patchWild = m[3] === undefined || /^[xX*]$/.test(m[3]);
   if (minorWild && !patchWild) return null;
+  if (m[1].length > 1 && m[1].startsWith('0')) return null;
+  if (!minorWild && m[2].length > 1 && m[2].startsWith('0')) return null;
+  if (!minorWild && !patchWild && m[3].length > 1 && m[3].startsWith('0')) return null;
   const major = Number(m[1]);
   const minor = minorWild ? 0 : Number(m[2]);
   const patch = minorWild || patchWild ? 0 : Number(m[3]);
@@ -176,6 +182,12 @@ function expandToken(token) {
         : { major: lower.major, minor: lower.minor + 1, patch: 0, prerelease: [], raw: '' };
       return [{ op: '<', version: upper }];
     }
+    if (op === '>' && lower.parts < 3) {
+      const next = lower.parts === 1
+        ? { major: lower.major + 1, minor: 0, patch: 0, prerelease: [], raw: '' }
+        : { major: lower.major, minor: lower.minor + 1, patch: 0, prerelease: [], raw: '' };
+      return [{ op: '>=', version: next }];
+    }
     return [{ op, version: lowerVersion }];
   }
 
@@ -216,8 +228,15 @@ export function parseRange(range) {
       const high = partial(hyphen[2]);
       if (!low || !high) return null;
       const lowVersion = { major: low.major, minor: low.minor, patch: low.patch, prerelease: low.prerelease || [], raw: '' };
-      const highVersion = { major: high.major, minor: high.minor, patch: high.patch, prerelease: high.prerelease || [], raw: '' };
-      sets.push([{ op: '>=', version: lowVersion }, { op: '<=', version: highVersion }]);
+      const highVersion = high.parts < 3
+        ? (high.parts === 1
+          ? { major: high.major + 1, minor: 0, patch: 0, prerelease: [], raw: '' }
+          : { major: high.major, minor: high.minor + 1, patch: 0, prerelease: [], raw: '' })
+        : { major: high.major, minor: high.minor, patch: high.patch, prerelease: high.prerelease || [], raw: '' };
+      sets.push([
+        { op: '>=', version: lowVersion },
+        { op: high.parts < 3 ? '<' : '<=', version: highVersion },
+      ]);
       continue;
     }
     const comparators = [];

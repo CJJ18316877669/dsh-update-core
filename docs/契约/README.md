@@ -105,12 +105,12 @@
 
 | 卡片 | 标题 | 状态 | 阻塞 |
 |---|---|---|---|
-| [C-001](C-001-profile-store.md) | ProfileStore：让"禁用"在真实 dsh 中生效 | 待实现 | C-002 |
-| [C-002](C-002-staging-verify.md) | staging 启动自检接线 | 待实现 | — |
-| [C-003](C-003-win-process.md) | Windows 启动与进程树 | 待实现 | C-004 |
-| [C-004](C-004-atomic-swap.md) | profile 原子切换与回滚 | 待实现 | — |
+| [C-001](C-001-profile-store.md) | ProfileStore：让"禁用"在真实 dsh 中生效 | 已合入 | C-002 |
+| [C-002](C-002-staging-verify.md) | staging 启动自检接线 | 已合入 | — |
+| [C-003](C-003-win-process.md) | Windows 启动与进程树 | 已合入 | C-004 |
+| [C-004](C-004-atomic-swap.md) | profile 原子切换与回滚 | 已合入 | — |
 
-建议顺序：C-003 → C-001 → C-002 → C-004。先修 Windows 启动，否则后面三张卡在本机都跑不起来。
+实际顺序：C-003 → C-001 → C-002 → C-004。四张卡片均已合入本地 `0.2.0`；真机与远端 runner 项在各卡片末尾单独标注。
 
 ## 与其他文档的关系
 

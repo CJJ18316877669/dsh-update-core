@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="dark">
+<meta name="dsh-update-token" content="__DSH_UPDATE_TOKEN__">
 <title>DeepSeek Harness · 一键更新按钮原型</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%234d6bfe'/%3E%3C/svg%3E">
 <style>
@@ -480,7 +481,7 @@
 </div>
 
 <div class="devbar" id="devbar">
-  <span class="dev-label">Prototype</span>
+  <span class="dev-label" id="devMode">Prototype</span>
   <label class="dev-field">状态
     <select id="devState" aria-label="演示状态">
       <option value="idle">idle · 空闲</option>
@@ -618,6 +619,7 @@
     confirmBtn: document.getElementById('confirmBtn'),
     closeModal: document.getElementById('closeModal'),
     toast: document.getElementById('toast'),
+    devMode: document.getElementById('devMode'),
     devState: document.getElementById('devState'),
     devFault: document.getElementById('devFault'),
     devTasks: document.getElementById('devTasks'),
@@ -629,6 +631,7 @@
     channel: 'stable',
     currentVersion: OLD_VERSION,
     previousVersion: OLD_VERSION,
+    targetVersion: null,
     plan: null,
     runPlan: null,
     checkResult: null,
@@ -649,6 +652,15 @@
     restarting: false
   };
 
+  var LIVE = {
+    enabled: false,
+    source: null,
+    token: '',
+    seq: 0,
+    lastToastSeq: 0,
+    commandPending: false
+  };
+
   var uiTimer = null;
   var toastTimer = null;
 
@@ -658,7 +670,7 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
     });
   }
-  function target() { return CHANNELS[APP.channel]; }
+  function target() { return LIVE.enabled ? liveTarget() : CHANNELS[APP.channel]; }
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function alive(id) { return id === APP.runId; }
 
@@ -745,6 +757,7 @@
 
   function finalize(plan) {
     var items = plan.items.map(function (p) {
+      if (p.state === 'disabled') { return p; }
       if (p.state === 'incompatible') {
         return Object.assign({}, p, {
           state: 'disabled', tag: '已禁用', tone: 'bad',
@@ -753,12 +766,12 @@
       }
       if (p.state === 'update') {
         return Object.assign({}, p, {
-          state: 'ok', tag: '已更新', tone: 'ok', note: '1.0.0 · 已随 Harness 更新'
+          state: 'ok', tag: '已更新', tone: 'ok', note: (p.to || p.from) + ' · 已随 Harness 更新'
         });
       }
       if (p.state === 'verify') {
         return Object.assign({}, p, {
-          state: 'ok', tag: '已验证', tone: 'ok', note: '0.4.1 · 启动自检通过'
+          state: 'ok', tag: '已验证', tone: 'ok', note: p.from + ' · 启动自检通过'
         });
       }
       if (p.state === 'core') {
@@ -980,7 +993,7 @@
       renderPlugins(planUpToDate(APP.currentVersion));
       showProgress(null, '正在检查更新');
       els.steps.hidden = true;
-      uiTimer = setTimeout(finishCheck, 1400);
+      if (!LIVE.enabled) { uiTimer = setTimeout(finishCheck, 1400); }
     }
 
     if (st === 'up-to-date') {
@@ -1247,6 +1260,7 @@
 
   function startCheck() {
     if (APP.running) { return; }
+    if (LIVE.enabled) { liveCommand('/api/check'); return; }
     APP.skipped = null;
     APP.runPlan = null;
     APP.plan = planUpToDate(APP.currentVersion);
@@ -1271,6 +1285,13 @@
 
   async function beginUpdate(plan) {
     if (!plan || APP.running) { return; }
+    if (LIVE.enabled) {
+      APP.previousVersion = APP.currentVersion;
+      APP.plan = plan;
+      APP.runPlan = plan;
+      liveCommand('/api/start', { confirm: true });
+      return;
+    }
     APP.plan = plan;
     APP.runPlan = plan;
     APP.previousVersion = APP.currentVersion;
@@ -1406,6 +1427,7 @@
 
   async function runRollback() {
     if (APP.running) { return; }
+    if (LIVE.enabled) { liveCommand('/api/rollback'); return; }
     APP.running = true;
     var id = ++APP.runId;
     APP.stageLabel = '正在回滚到 ' + APP.previousVersion;
@@ -1442,6 +1464,7 @@
 
   function cancelUpdate() {
     if (APP.runMandatory) { toast('强制更新不可取消'); return; }
+    if (LIVE.enabled) { liveCommand('/api/cancel'); return; }
     var cancellableState = ['downloading', 'staged'].indexOf(APP.state) !== -1;
     if (APP.running && !APP.cancellable && !cancellableState) { return; }
     if (!APP.running && APP.state !== 'downloading' && APP.state !== 'staged') { return; }
@@ -1659,6 +1682,256 @@
     }
   }
 
+  /* ---------- Live core bridge ---------- */
+
+  function liveTarget() {
+    var base = CHANNELS[APP.channel] || CHANNELS.stable;
+    return Object.assign({}, base, {
+      version: APP.targetVersion || base.version,
+      label: APP.channel === 'nightly' ? '开发版' : '正式版',
+      size: APP.targetVersion ? '由 registry 决定' : base.size,
+      eta: '由实际下载决定'
+    });
+  }
+
+  function liveRequest(path, body) {
+    return fetch(path, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-dsh-update-token': LIVE.token
+      },
+      body: JSON.stringify(body || {})
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok) {
+          var err = new Error((data.error && data.error.message) || data.error || '请求失败');
+          err.code = data.code || (data.error && data.error.code);
+          throw err;
+        }
+        return data;
+      });
+    });
+  }
+
+  function liveCommand(path, body) {
+    if (LIVE.commandPending) { return Promise.resolve(); }
+    LIVE.commandPending = true;
+    return liveRequest(path, body).catch(function (err) {
+      toast('操作未执行：' + (err.code || err.message));
+    }).finally(function () {
+      LIVE.commandPending = false;
+    });
+  }
+
+  function liveError(dto) {
+    var code = dto && dto.code ? dto.code : 'UPD-501';
+    var titles = {
+      'UPD-101': '无法连接更新源',
+      'UPD-102': '更新源返回了无效信息',
+      'UPD-201': '需要确认插件变更',
+      'UPD-202': '核心插件不兼容',
+      'UPD-301': '磁盘空间不足',
+      'UPD-302': '没有写入权限',
+      'UPD-303': '另一个实例正在更新',
+      'UPD-401': '下载失败，已保留当前版本',
+      'UPD-402': '完整性校验失败',
+      'UPD-501': '安装失败',
+      'UPD-502': '新版本自检未通过',
+      'UPD-503': '插件加载失败',
+      'UPD-601': '自动回滚失败',
+      'UPD-702': '当前环境无法原地更新'
+    };
+    var bodies = {
+      'UPD-101': '请检查网络或代理后重试；当前版本未做任何更改。',
+      'UPD-202': '核心插件是启动必需项；当前版本未做任何更改。',
+      'UPD-401': '下载未完成；当前版本未做任何更改。',
+      'UPD-402': '下载内容未通过校验，已丢弃。',
+      'UPD-502': '新版本未能通过启动自检，已尝试恢复更新前状态。',
+      'UPD-601': 'Harness 可能无法启动。请先备份 $DSH_HOME，再执行修复命令。',
+      'UPD-702': '请按提示升级 Node.js 或改用受支持的安装方式。'
+    };
+    return {
+      code: code,
+      title: titles[code] || '更新未完成',
+      body: bodies[code] || '当前版本未做任何更改，请查看日志后重试。'
+    };
+  }
+
+  function livePlugin(item, dto) {
+    var action = item.action;
+    var state = 'ok';
+    var tag = '已适配';
+    var tone = 'ok';
+    var note = item.from + ' · 已适配';
+    if (action === 'update') {
+      state = 'update'; tag = '将更新'; tone = 'up';
+      note = item.from + ' → ' + item.to;
+    } else if (action === 'keep' && item.verify) {
+      state = 'verify'; tag = '待验证'; tone = 'off';
+      note = item.from + ' · 未声明版本契约，将在 staging 验证';
+    } else if (action === 'keep' && item.core) {
+      state = 'core'; tag = '核心'; tone = 'ok';
+      note = item.from + ' · 随 Harness 提供';
+    } else if (action === 'disable') {
+      if (dto.state === 'succeeded') {
+        state = 'disabled'; tag = '已禁用'; tone = 'bad';
+        note = item.from + ' · 已禁用（可恢复）';
+      } else {
+        state = 'incompatible'; tag = '不兼容'; tone = 'bad';
+        note = item.from + ' · 无兼容版本，将被禁用';
+      }
+    } else if (action === 'block') {
+      state = 'blocked'; tag = '核心阻断'; tone = 'bad';
+      note = item.from + ' · 与新版本不兼容';
+    } else if (action === 'manual') {
+      state = 'verify'; tag = '需手动处理'; tone = 'off';
+      note = item.from + ' · 非 registry 来源，不会自动修改';
+    }
+    var result = plugin(item.name, item.name, item.from, item.to, state, note, tag, tone);
+    result.restorable = state === 'disabled';
+    return result;
+  }
+
+  function livePlan(dto, t) {
+    if (!dto.plan) {
+      if (dto.state === 'up-to-date' || dto.state === 'idle') { return planUpToDate(APP.currentVersion); }
+      if (dto.state === 'safe-mode') { return planSafe(t); }
+      return planNormal(t);
+    }
+    var mapped = dto.plan.items.map(function (item) { return livePlugin(item, dto); });
+    var disabled = mapped.filter(function (p) { return p.state === 'incompatible' || p.state === 'disabled'; })
+      .map(function (p) { return p.name; });
+    var blockers = mapped.filter(function (p) { return p.state === 'blocked'; })
+      .map(function (p) { return { name: p.name, version: p.from, reason: '核心插件不兼容' }; });
+    return {
+      kind: blockers.length ? 'blocked' : (disabled.length ? 'risky' : 'normal'),
+      target: dto.plan.targetCore || t.version,
+      items: mapped,
+      updates: dto.plan.updates,
+      keeps: dto.plan.keeps,
+      disabled: disabled,
+      blockers: blockers,
+      total: dto.plan.items.length,
+      foot: '来自真实更新核心：' + dto.plan.updates + ' 个更新、' + dto.plan.keeps
+        + ' 个保留、' + dto.plan.disables + ' 个禁用、' + dto.plan.blocks + ' 个阻断。'
+    };
+  }
+
+  function liveStep(stage) {
+    if (stage === 'download') { return [1, 1]; }
+    if (stage === 'verify') { return [2, 2]; }
+    if (stage === 'stage' || stage === 'draining') { return [3, 3]; }
+    if (stage === 'activating' || stage === 'staging-health') { return [4, 4]; }
+    if (stage === 'verifying-install' || stage === 'rolling-back' || stage === 'delegated-to-desktop') { return [5, 4]; }
+    return [0, 0];
+  }
+
+  function applyLiveState(dto) {
+    if (!dto || !dto.state) { return; }
+    var previous = APP.state;
+    var stage = dto.progress && dto.progress.stage || '';
+    var labels = {
+      check: '正在检查更新',
+      preparing: '正在准备并建立回滚点',
+      'staging-health': '正在启动 staging 自检',
+      download: '正在下载',
+      verify: '正在验证签名与完整性',
+      stage: '正在暂存新版本',
+      draining: '等待运行中任务结束',
+      activating: '正在原子切换版本',
+      'verifying-install': '正在执行启动自检',
+      'rolling-back': '自检未通过，正在回滚',
+      'delegated-to-desktop': '等待桌面 Coordinator 重启验证',
+      done: '已完成'
+    };
+    APP.state = dto.state;
+    APP.channel = dto.channel || APP.channel;
+    APP.targetVersion = dto.targetVersion || (dto.plan && dto.plan.targetCore) || null;
+    if (dto.currentVersion) { APP.currentVersion = dto.currentVersion; }
+    if (dto.state === 'preparing' && APP.currentVersion) { APP.previousVersion = APP.currentVersion; }
+    APP.progress = dto.progress && Number.isFinite(dto.progress.percent) ? dto.progress.percent : 0;
+    APP.stageLabel = labels[stage] || '';
+    var step = liveStep(stage);
+    APP.step = step[0];
+    APP.done = step[1];
+    APP.running = locked() || dto.state === 'checking';
+    APP.cancellable = dto.state === 'downloading';
+    APP.plan = livePlan(dto, liveTarget());
+    APP.runPlan = APP.plan;
+    APP.error = dto.error ? liveError(dto.error) : null;
+    if (dto.result && dto.result.version) { APP.currentVersion = dto.result.version; }
+    if (dto.result && dto.result.upToDate && dto.result.version) { APP.currentVersion = dto.result.version; }
+    if (dto.state === 'succeeded') {
+      APP.targetVersion = null;
+      APP.plan = finalize(APP.plan);
+    }
+    if (dto.state === 'safe-mode') { APP.error = liveError({ code: 'UPD-601' }); }
+    paint();
+    LIVE.lastState = dto.state;
+    if (previous !== dto.state && dto.seq > LIVE.lastToastSeq) {
+      var terminal = {
+        succeeded: '更新已完成',
+        'rolled-back': '已自动回滚到 ' + APP.currentVersion,
+        'safe-mode': '自动回滚失败，已进入安全模式',
+        blocked: '更新被核心插件阻断'
+      }[dto.state];
+      if (terminal) {
+        LIVE.lastToastSeq = dto.seq;
+        toast(terminal);
+      }
+    }
+    if (dto.seq > LIVE.lastToastSeq && dto.result && dto.result.cancelled) {
+      LIVE.lastToastSeq = dto.seq;
+      toast('已取消，未做任何更改');
+    }
+    if (LIVE.needInitialCheck && dto.state === 'idle') {
+      LIVE.needInitialCheck = false;
+      liveCommand('/api/check');
+    }
+  }
+
+  function initLive() {
+    if (location.protocol !== 'http:' && location.protocol !== 'https:') { return; }
+    var meta = document.querySelector('meta[name="dsh-update-token"]');
+    var token = meta ? meta.getAttribute('content') : '';
+    if (!token || token.indexOf('__DSH_') === 0) { return; }
+    LIVE.enabled = true;
+    LIVE.token = token;
+    LIVE.needInitialCheck = true;
+    APP.hasTasks = false;
+    els.devTasks.checked = false;
+    els.devMode.textContent = 'LIVE';
+    els.devMode.title = '状态由真实 UpdateOrchestrator 推送；状态选择器在 live 模式禁用';
+    els.devState.disabled = true;
+    els.devTasks.disabled = true;
+    els.devFault.disabled = false;
+    LIVE.source = new EventSource('/api/events');
+    LIVE.source.onmessage = function (event) {
+      var data;
+      try { data = JSON.parse(event.data); } catch (_) { return; }
+      if (data.type === 'state') {
+        var incoming = data.state && typeof data.state === 'object'
+          ? Object.assign({}, data.state, { seq: data.seq })
+          : data;
+        applyLiveState(incoming);
+      }
+      if (data.type === 'reset') {
+        LIVE.scenario = data.scenario;
+        LIVE.needInitialCheck = true;
+        applyLiveState({ state: 'idle', channel: 'stable', currentVersion: APP.currentVersion,
+          plan: null, progress: { percent: 0, stage: '' }, result: null, error: null, seq: data.seq });
+      }
+      if (data.type === 'error' && ['rolled-back', 'failed', 'safe-mode', 'blocked'].indexOf(APP.state) === -1) {
+        toast('更新核心：' + (data.error && data.error.code || '操作失败'));
+      }
+    };
+    LIVE.source.onerror = function () {
+      els.devMode.textContent = 'Live · 重连中';
+    };
+    LIVE.source.onopen = function () { els.devMode.textContent = 'LIVE'; };
+  }
+
   /* ---------- Demo controls ---------- */
 
   function applyDemo(name) {
@@ -1791,6 +2064,14 @@
     if (!btn || btn.disabled) { return; }
     if (locked()) { toast('更新进行中，暂不能切换渠道'); return; }
     if (!els.modal.hidden) { return; }
+    if (LIVE.enabled) {
+      var nextChannel = btn.dataset.channel;
+      liveCommand('/api/channel', { channel: nextChannel }).then(function () {
+        if (!LIVE.commandPending) { liveCommand('/api/check'); }
+        toast(nextChannel === 'stable' ? '已切换到正式版渠道' : '已切换到开发版渠道');
+      });
+      return;
+    }
     APP.channel = btn.dataset.channel;
     Array.prototype.forEach.call(els.channelSeg.querySelectorAll('button'), function (b) {
       var on = b === btn;
@@ -1832,10 +2113,18 @@
     });
   });
 
-  els.devState.addEventListener('change', function () { applyDemo(els.devState.value); });
+  els.devState.addEventListener('change', function () {
+    if (LIVE.enabled) { els.devState.value = APP.state; return; }
+    applyDemo(els.devState.value);
+  });
 
   els.devFault.addEventListener('change', function () {
     APP.fault = els.devFault.value;
+    if (LIVE.enabled) {
+      liveRequest('/api/demo/fault', { fault: APP.fault }).catch(function (err) {
+        toast('故障注入失败：' + err.message);
+      });
+    }
     if (APP.fault !== 'none') {
       var label = els.devFault.options[els.devFault.selectedIndex].textContent;
       toast('已注入故障：' + label + '（下一次运行生效）');
@@ -1843,12 +2132,23 @@
   });
 
   els.devTasks.addEventListener('change', function () {
+    if (LIVE.enabled) { els.devTasks.checked = false; return; }
     APP.hasTasks = els.devTasks.checked;
     if (APP.modalMode) { renderModal(APP.modalMode); }
     if (['staged', 'draining', 'available', 'available-incompatible'].indexOf(APP.state) !== -1) { paint(); }
   });
 
   els.devReset.addEventListener('click', function () {
+    if (LIVE.enabled) {
+      liveRequest('/api/demo/reset', { scenario: LIVE.scenario || 'success' }).then(function () {
+        APP.channel = 'stable';
+        APP.error = null;
+        APP.fault = 'none';
+        els.devFault.value = 'none';
+        toast('已重置真实核心');
+      }).catch(function (err) { toast('重置失败：' + err.message); });
+      return;
+    }
     APP.channel = 'stable';
     APP.currentVersion = OLD_VERSION;
     APP.previousVersion = OLD_VERSION;
@@ -1889,6 +2189,7 @@
   APP.runPlan = APP.plan;
   APP.state = 'available';
   paint();
+  initLive();
 })();
 </script>
 </body>

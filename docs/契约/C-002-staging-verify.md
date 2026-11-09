@@ -1,6 +1,6 @@
 # C-002 staging 启动自检接线
 
-状态：待实现
+状态：已合入（2026-11-09，本地；真机 24.x 验收待完成）
 依赖：C-001（禁用通道打通后再验"禁用是否真的生效"）
 阻塞：—
 
@@ -39,11 +39,11 @@ PluginGate.verify(plan) => Promise<plan>        // src/plugin-gate.mjs:227
 5. **证据落盘**：journal 或 audit 中留下 `--version`、`--dump-config` 的输出尾部与启动日志尾部各 200 行。
 6. **幂等**：同输入连续两次 verify，结论一致。
 
-## 待确认
+## 已确认
 
-- staging profile 的启动命令是什么？`dsh --profile <path> --version` 还是需要先改环境变量（`DSH_HOME` / `DSH_PROFILE`）？
-- 启动成功的最低判据：进程退出码 0，还是要看到某行日志？
-- 端口冲突怎么处理：换端口重试，还是直接判失败？
+- staging 目录重构为独立的 `<staging>/home/profiles/<name>`，命令为 `node <bin> --profile <name> --dump-config` 与 `node <bin> --profile <name>`，通过 `DSH_HOME` 指向 staging home。
+- 成功判据：`--version` 与目标版本一致、`--dump-config` 退出 0、启动探测在就绪窗口内保持运行或退出 0。
+- 端口冲突不重试：进程非 0 退出即失败；由可选插件/核心插件身份规则处置或安全中止。
 
 ## 禁止
 

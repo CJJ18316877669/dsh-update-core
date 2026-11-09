@@ -19,6 +19,7 @@ export class ElectronUpdaterBackend {
     this.currentVersion = options.currentVersion;
     this.plugins = options.plugins || [];
     this.channel = options.channel || 'stable';
+    this.coordinator = options.coordinator || null;
     this.listener = null;
   }
 
@@ -89,6 +90,9 @@ export class ElectronUpdaterBackend {
 
   async drain(ctx = {}) {
     if (ctx.signal && ctx.signal.aborted) throw new AbortedError();
+    if (this.coordinator && typeof this.coordinator.drain === 'function') {
+      return this.coordinator.drain(ctx);
+    }
     return { ok: true };
   }
 
@@ -96,11 +100,18 @@ export class ElectronUpdaterBackend {
     if (typeof this.autoUpdater.quitAndInstall !== 'function') {
       throw new UpdateError('UPD-702', { message: 'autoUpdater.quitAndInstall is not available' });
     }
-    this.autoUpdater.quitAndInstall(false, true);
+    if (this.coordinator && typeof this.coordinator.quitAndInstall === 'function') {
+      await this.coordinator.quitAndInstall();
+    } else {
+      this.autoUpdater.quitAndInstall(false, true);
+    }
     return {
       id: 'desktop-install',
       commit: async () => {},
       rollback: async () => {
+        if (this.coordinator && typeof this.coordinator.rollback === 'function') {
+          return this.coordinator.rollback();
+        }
         throw new Error('desktop rollback is handled by the installer');
       },
     };
@@ -108,11 +119,22 @@ export class ElectronUpdaterBackend {
 
   async health() {
     // 桌面安装后的进程重启、启动日志与回滚由 DesktopUpdateCoordinator 负责。
-    // delegated 标记表示“本适配器没有验证”，调用方应据此跳过自检结论。
+    // delegated 表示“本适配器没有验证”；orchestrator 不得据此提交事务。
+    if (this.coordinator && typeof this.coordinator.health === 'function') {
+      return this.coordinator.health();
+    }
     return { ok: true, delegated: true, checks: ['delegated-to-desktop'] };
   }
 
   async rollback() {
+    if (this.coordinator && typeof this.coordinator.rollback === 'function') {
+      try {
+        const result = await this.coordinator.rollback();
+        return result || { ok: true, mode: 'rolled-back', reason: 'desktop-coordinator' };
+      } catch (error) {
+        return { ok: false, mode: 'safe-mode', reason: error instanceof Error ? error.message : String(error) };
+      }
+    }
     return { ok: false, mode: 'safe-mode', reason: 'desktop-rollback-requires-installer' };
   }
 

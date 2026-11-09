@@ -182,6 +182,58 @@ test('npm backend: rejects snapshot paths outside the backup root', async () => 
   assert.equal(result.reason, 'snapshot-outside-backup-root');
 });
 
+test('npm backend: rejects a release whose Node, OS or CPU contract excludes this host', async () => {
+  const { home } = await makeProfile();
+  const release = (extra) => async () => ({
+    ok: true,
+    json: async () => ({
+      'dist-tags': { latest: '0.2.3' },
+      versions: {
+        '0.2.3': {
+          version: '0.2.3',
+          dist: { integrity: INTEGRITY, tarball: 'https://registry.example/dsh.tgz' },
+          ...extra,
+        },
+      },
+    }),
+  });
+  await assert.rejects(
+    () => new NpmBackend({ home, fetchImpl: release({ engines: { node: '>=999.0.0' } }) }).check('stable'),
+    (error) => error.code === 'UPD-702' && error.details.required === '>=999.0.0',
+  );
+  await assert.rejects(
+    () => new NpmBackend({ home, fetchImpl: release({ os: ['plan9'] }) }).check('stable'),
+    (error) => error.code === 'UPD-702',
+  );
+  await assert.rejects(
+    () => new NpmBackend({ home, fetchImpl: release({ cpu: ['mips'] }) }).check('stable'),
+    (error) => error.code === 'UPD-702',
+  );
+});
+
+test('npm backend: validates profile names and package-manager options before writing', async () => {
+  const { home } = await makeProfile();
+  assert.throws(() => new NpmBackend({ home, profileName: 'Web' }), /lowercase/);
+  assert.throws(() => new NpmBackend({ home, profileName: '../web' }), /invalid/);
+  assert.throws(() => new NpmBackend({ home, profileName: 'desktop' }), /reserved/);
+  assert.throws(() => new NpmBackend({ home, packageManager: 'yarn' }), /unsupported/);
+  assert.throws(() => new NpmBackend({ home, allowBuilds: ['bad package;rm'] }), /invalid allowBuilds/);
+  const plan = { targetCore: '0.2.3', items: [] };
+  let context;
+  const backendWithInstaller = new NpmBackend({
+    home,
+    packageManager: 'pnpm',
+    allowBuilds: ['node-pty'],
+    fetchImpl: fakeFetch(),
+    stagingReadyMs: 0,
+    installer: async (ctx) => { context = ctx; await mkdir(join(ctx.cwd, 'node_modules'), { recursive: true }); },
+  });
+  await backendWithInstaller.check('stable');
+  await backendWithInstaller.prepare(plan);
+  assert.equal(context.packageManager, 'pnpm');
+  assert.deepEqual(context.allowBuilds, ['node-pty']);
+});
+
 test('npm backend: prepare and activate validate their inputs', async () => {
   const { home } = await makeProfile();
   const backend = new NpmBackend({ home, fetchImpl: fakeFetch() });

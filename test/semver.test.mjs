@@ -10,6 +10,8 @@ test('parse: strict semver, prerelease and build metadata', () => {
   assert.equal(parse('1.2'), null);
   assert.equal(parse('not-a-version'), null);
   assert.equal(parse('1.2.3.4'), null);
+  assert.equal(parse('01.2.3'), null);
+  assert.equal(parse('1.2.3-01'), null);
 });
 
 test('compare: prerelease ordering', () => {
@@ -65,4 +67,11 @@ test('satisfies: partial versions behave like ranges', () => {
   assert.equal(satisfies('2.0.0', '1'), false);
   assert.equal(satisfies('1.2.9', '<=1.2'), true);
   assert.equal(satisfies('1.3.0', '<=1.2'), false);
+  assert.equal(satisfies('1.2.1', '>1.2'), false);
+  assert.equal(satisfies('1.3.0', '>1.2'), true);
+  assert.equal(satisfies('2.0.0', '>1'), true);
+  assert.equal(satisfies('1.9.9', '>1'), false);
+  assert.equal(satisfies('1.9.9', '1.2 - 1.9'), true);
+  assert.equal(satisfies('2.0.0', '1.2 - 1.9'), false);
+  assert.equal(satisfies('01.2.3', '^1.0.0'), false);
 });

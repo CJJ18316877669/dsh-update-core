@@ -1,12 +1,14 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { access, cp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { access, cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { UpdateError, AbortedError } from '../errors.mjs';
 import { looksLikeCore } from '../plugin-gate.mjs';
-import { parse } from '../semver.mjs';
+import { parse, parseRange, satisfies } from '../semver.mjs';
 import { runCommand, killTree } from '../platform/process.mjs';
 import { ProfileStore } from '../profile-store.mjs';
+import { copyFallback, pathExists, renameWithRetry } from '../platform/fs.mjs';
+import { assertSafePathLength, assertSafeProfileName } from '../platform/paths.mjs';
 
 /**
  * 校验 npm dist.integrity（SRI，通常是 sha512-<base64>）。
@@ -62,6 +64,37 @@ function assertSafeRegistry(registry) {
   return url.toString().replace(/\/$/, '');
 }
 
+function assertTargetRuntime(entry) {
+  const nodeRange = entry && entry.engines && entry.engines.node;
+  if (nodeRange !== undefined) {
+    if (typeof nodeRange !== 'string' || !parseRange(nodeRange)) {
+      throw new UpdateError('UPD-702', { message: 'release has an invalid Node.js engine range' });
+    }
+    if (!satisfies(process.versions.node, nodeRange, { includePrerelease: true })) {
+      throw new UpdateError('UPD-702', {
+        message: `release requires Node.js ${nodeRange}; current is ${process.versions.node}`,
+        details: { required: nodeRange, current: process.versions.node },
+      });
+    }
+  }
+  if (Array.isArray(entry.os) && entry.os.length > 0) {
+    const supported = entry.os.includes(process.platform)
+      || (process.platform === 'win32' && entry.os.includes('win'));
+    if (!supported) {
+      throw new UpdateError('UPD-702', {
+        message: `release does not support ${process.platform}`,
+        details: { supported: entry.os, current: process.platform },
+      });
+    }
+  }
+  if (Array.isArray(entry.cpu) && entry.cpu.length > 0 && !entry.cpu.includes(process.arch)) {
+    throw new UpdateError('UPD-702', {
+      message: `release does not support ${process.arch}`,
+      details: { supported: entry.cpu, current: process.arch },
+    });
+  }
+}
+
 /**
  * 真实 npm 后端：读取 registry、校验完整性、在 staging 安装、原子切换 profile。
  * installer 可注入，便于离线测试；默认执行 npm install --ignore-scripts。
@@ -77,25 +110,39 @@ export class NpmBackend {
   constructor(options) {
     if (!options || !options.home) throw new TypeError('NpmBackend requires home');
     this.kind = 'npm-global';
-    this.home = options.home;
-    this.profileName = options.profileName || 'web';
+    this.home = resolve(options.home);
+    this.profileName = assertSafeProfileName(options.profileName || 'web');
     this.registry = assertSafeRegistry(options.registry || 'https://registry.npmjs.org');
     this.packageName = options.packageName || '@deepseek-ai/dsh';
     this.channelTags = options.channelTags || { stable: 'latest', nightly: 'nightly' };
     this.fetchImpl = options.fetchImpl || globalThis.fetch;
-    this.installer = options.installer || ((ctx) => runCommand(
-      process.platform === 'win32' ? 'npm.cmd' : 'npm',
-      ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--no-progress'],
-      ctx,
-    ));
+    this.packageManager = options.packageManager || 'npm';
+    if (!['npm', 'pnpm'].includes(this.packageManager)) {
+      throw new TypeError(`unsupported packageManager: ${this.packageManager}`);
+    }
+    this.allowBuilds = [...(options.allowBuilds || [])];
+    for (const name of this.allowBuilds) {
+      if (typeof name !== 'string' || !/^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(name)) {
+        throw new TypeError(`invalid allowBuilds package: ${String(name)}`);
+      }
+    }
+    this.installer = options.installer || ((ctx) => this.runDefaultInstaller(ctx));
     this.healthCheck = options.healthCheck || null;
     this.stagingHealthCheck = options.stagingHealthCheck || null;
     this.stagingReadyMs = options.stagingReadyMs ?? 3000;
+    this.watchdogPort = options.watchdogPort || null;
+    this.watchdogTimeoutMs = options.watchdogTimeoutMs ?? 90000;
+    this.backupKeep = options.backupKeep ?? 3;
+    this.stagingKeepDays = options.stagingKeepDays ?? 7;
+    this.failedKeepDays = options.failedKeepDays ?? 7;
+    this.historyKeep = options.historyKeep ?? 100;
     this.profileStoreFactory = options.profileStoreFactory
       || ((profileDir) => new ProfileStore({ profileDir }));
+    this.fsOps = options.fsOps || {};
+    this.renameBackoff = options.renameBackoff || [50, 150, 400];
     this.timeoutMs = options.timeoutMs || 20000;
     this.clock = options.clock || Date.now;
-    this.profileDir = join(this.home, 'profiles', this.profileName);
+    this.profileDir = assertSafePathLength(join(this.home, 'profiles', this.profileName));
     this.stagingRoot = join(this.home, 'updates', 'staging');
     this.backupRoot = join(this.home, 'updates', 'backup');
     this.release = null;
@@ -212,6 +259,7 @@ export class NpmBackend {
     if (typeof integrity !== 'string' || !/^sha(256|384|512)-/.test(integrity)) {
       throw new UpdateError('UPD-402', { message: `release ${version} has no usable integrity` });
     }
+    assertTargetRuntime(entry);
     const release = {
       version,
       channel,
@@ -263,19 +311,46 @@ export class NpmBackend {
     return out;
   }
 
+  async pruneSnapshots() {
+    try {
+      const prefix = `${this.profileName}-`;
+      const entries = await readdir(this.backupRoot, { withFileTypes: true });
+      const snapshots = entries
+        .filter((entry) => entry.isDirectory() && entry.name.startsWith(prefix))
+        .map((entry) => entry.name)
+        .sort()
+        .reverse();
+      await Promise.all(snapshots.slice(Math.max(0, this.backupKeep - 1)).map((name) => (
+        rm(join(this.backupRoot, name), { recursive: true, force: true }).catch(() => {})
+      )));
+    } catch {
+      // First update has no backup root yet.
+    }
+  }
+
   async snapshot() {
     if (!(await exists(this.profileDir))) return null;
+    await this.pruneSnapshots();
     const id = `${this.clock()}-${randomBytes(3).toString('hex')}`;
     const path = join(this.backupRoot, `${this.profileName}-${id}`);
     await mkdir(this.backupRoot, { recursive: true });
-    await cp(this.profileDir, path, { recursive: true, force: true });
+    await cp(this.profileDir, path, { recursive: true, force: true, dereference: true });
     return {
       id,
       path,
       restore: async () => {
         const failed = `${this.profileDir}.failed-${id}`;
-        if (await exists(this.profileDir)) await rename(this.profileDir, failed);
-        await cp(path, this.profileDir, { recursive: true, force: true });
+        if (await this.hasPath(this.profileDir)) await this.renamePath(this.profileDir, failed);
+        try {
+          await copyFallback(path, this.profileDir, {
+            fs: this.fsOps,
+            id,
+            backoff: this.renameBackoff,
+          });
+        } catch (error) {
+          /** @type {any} */ (error).failedPath = failed;
+          throw error;
+        }
       },
     };
   }
@@ -340,6 +415,8 @@ export class NpmBackend {
         timeoutMs: 180000,
         packageName: this.packageName,
         version: release.version,
+        packageManager: this.packageManager,
+        allowBuilds: [...this.allowBuilds],
       });
       await this.applyStagingDecisions({ path: staging, plan });
       onProgress({ percent: 95, stage: 'stage' });
@@ -350,9 +427,44 @@ export class NpmBackend {
     }
   }
 
+  /** Remove one abandoned staging tree without touching a backup. */
+  async discardStaged(staged) {
+    if (!staged || typeof staged.id !== 'string') return;
+    const root = resolve(this.stagingRoot);
+    const target = resolve(this.stagingRoot, staged.id);
+    if (!target.startsWith(`${root}${sep}`)) return;
+    await rm(target, { recursive: true, force: true }).catch(() => {});
+  }
+
+  async runDefaultInstaller(ctx) {
+    const executable = process.platform === 'win32'
+      ? `${this.packageManager}.cmd`
+      : this.packageManager;
+    const args = this.packageManager === 'pnpm'
+      ? ['install', '--ignore-scripts', '--no-frozen-lockfile', '--prefer-offline']
+      : ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--no-progress'];
+    const result = await runCommand(executable, args, ctx);
+    let extra = '';
+    for (const name of this.allowBuilds) {
+      const rebuild = this.packageManager === 'pnpm'
+        ? await runCommand(executable, ['rebuild', name], {
+          cwd: ctx.cwd,
+          signal: ctx.signal,
+          timeoutMs: 120000,
+        })
+        : await runCommand(executable, ['rebuild', name, '--foreground-scripts'], {
+          cwd: ctx.cwd,
+          signal: ctx.signal,
+          timeoutMs: 120000,
+        });
+      extra += `${rebuild.stdout}\n${rebuild.stderr}\n`;
+    }
+    return { stdout: result.stdout, stderr: `${result.stderr}${extra}` };
+  }
+
   /**
    * 将新的禁用决定写入 staging patch；不触碰正式 profile。
-   * @param {{path:string, plan:Record<string, any>}} staged
+   * @param {{path:string, plan:Record<string,any>}} staged
    * @param {Record<string, any>|null} [previousPlan]
    */
   async applyStagingDecisions(staged, previousPlan = null) {
@@ -484,6 +596,17 @@ export class NpmBackend {
     return { ok: true, tasks: 0 };
   }
 
+  async renamePath(source, target) {
+    return renameWithRetry(source, target, {
+      fs: this.fsOps,
+      backoff: this.renameBackoff,
+    });
+  }
+
+  async hasPath(path) {
+    return pathExists(path, this.fsOps);
+  }
+
   /** @param {{id:string, path:string, plan:Record<string, any>}} staged */
   async activate(staged) {
     if (!staged || typeof staged.path !== 'string'
@@ -491,34 +614,79 @@ export class NpmBackend {
       throw new UpdateError('UPD-501', { message: 'invalid staged update' });
     }
     const previous = `${this.profileDir}.old-${staged.id}`;
+    const failedPath = `${this.profileDir}.failed-${staged.id}`;
     let moved = false;
+    let degraded = false;
     try {
-      if (await exists(this.profileDir)) {
-        await rename(this.profileDir, previous);
+      if (await this.hasPath(this.profileDir)) {
+        await this.renamePath(this.profileDir, previous);
         moved = true;
       }
-      await rename(staged.path, this.profileDir);
+      try {
+        await this.renamePath(staged.path, this.profileDir);
+      } catch (error) {
+        if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'EXDEV') throw error;
+        await copyFallback(staged.path, this.profileDir, {
+          fs: this.fsOps,
+          id: staged.id,
+          backoff: this.renameBackoff,
+        });
+        degraded = true;
+      }
     } catch (error) {
-      if (moved) await rename(previous, this.profileDir).catch(() => {});
-      throw new UpdateError('UPD-501', { message: 'failed to activate staged profile', cause: error });
+      let restored = true;
+      if (moved) {
+        restored = false;
+        try {
+          await this.renamePath(previous, this.profileDir);
+          restored = true;
+        } catch {
+          // The previous profile remains at `previous`; surface it for manual recovery.
+        }
+      }
+      throw new UpdateError('UPD-501', {
+        message: 'failed to activate staged profile',
+        details: {
+          cause: error instanceof Error ? error.message : String(error),
+          degraded,
+          rollbackFailed: !restored,
+          previous,
+        },
+        cause: error,
+      });
     }
     return {
       id: staged.id,
       plan: staged.plan,
+      degraded,
+      previous,
       commit: async () => {
         await rm(previous, { recursive: true, force: true }).catch(() => {});
       },
       rollback: async () => {
-        if (await exists(this.profileDir)) {
-          await rename(this.profileDir, `${this.profileDir}.failed-${staged.id}`).catch(() => {});
-        }
-        if (moved) {
-          await rename(previous, this.profileDir);
-        } else {
-          // 首次安装没有上一版：回滚即移除新 profile。
-          await rm(this.profileDir, { recursive: true, force: true }).catch(() => {});
+        try {
+          if (await this.hasPath(this.profileDir)) {
+            await this.renamePath(this.profileDir, failedPath);
+          }
+          if (moved) {
+            await this.renamePath(previous, this.profileDir);
+          }
+        } catch (error) {
+          const failure = new Error(`activation rollback failed; failed profile: ${failedPath}`);
+          failure.cause = error;
+          /** @type {any} */ (failure).failedPath = failedPath;
+          throw failure;
         }
       },
+    };
+  }
+
+  helperConfig() {
+    if (!this.watchdogPort) return null;
+    return {
+      profile: this.profileDir,
+      port: this.watchdogPort,
+      timeoutMs: this.watchdogTimeoutMs,
     };
   }
 
@@ -558,32 +726,74 @@ export class NpmBackend {
     if (!resolve(snapshot).startsWith(backupRoot)) {
       return { ok: false, mode: 'safe-mode', reason: 'snapshot-outside-backup-root' };
     }
+    const failed = `${this.profileDir}.failed-${this.clock()}`;
     try {
-      const failed = `${this.profileDir}.failed-${this.clock()}`;
-      if (await exists(this.profileDir)) await rename(this.profileDir, failed);
-      await cp(snapshot, this.profileDir, { recursive: true, force: true });
+      if (await this.hasPath(this.profileDir)) await this.renamePath(this.profileDir, failed);
+      await copyFallback(snapshot, this.profileDir, {
+        fs: this.fsOps,
+        id: `rollback-${this.clock()}`,
+        backoff: this.renameBackoff,
+      });
       return { ok: true, mode: 'rolled-back', reason: 'snapshot-restored' };
     } catch (error) {
-      return { ok: false, mode: 'safe-mode', reason: error instanceof Error ? error.message : String(error) };
+      return {
+        ok: false,
+        mode: 'safe-mode',
+        reason: error instanceof Error ? error.message : String(error),
+        failedPath: failed,
+      };
     }
   }
 
   async cleanup() {
-    const cutoff = this.clock() - 7 * 24 * 60 * 60 * 1000;
+    const now = this.clock();
+    const stagingCutoff = now - this.stagingKeepDays * 24 * 60 * 60 * 1000;
+    const failedCutoff = now - this.failedKeepDays * 24 * 60 * 60 * 1000;
+    async function prune(root, predicate, cutoff) {
+      try {
+        const entries = await readdir(root, { withFileTypes: true });
+        await Promise.all(entries.filter(predicate).map(async (entry) => {
+          const path = join(root, entry.name);
+          try {
+            const info = await stat(path);
+            if (info.mtimeMs < cutoff) await rm(path, { recursive: true, force: true });
+          } catch {
+            // A concurrent cleanup may have removed it.
+          }
+        }));
+      } catch {
+        // Root may not exist yet.
+      }
+    }
+    await prune(this.stagingRoot, () => true, stagingCutoff);
+    await prune(join(this.home, 'profiles'), (entry) => (
+      entry.name.startsWith(`${this.profileName}.failed-`)
+      || entry.name.startsWith(`${this.profileName}.old-`)
+    ), failedCutoff);
     try {
-      const { readdir, stat } = await import('node:fs/promises');
-      const entries = await readdir(this.stagingRoot, { withFileTypes: true });
-      await Promise.all(entries.map(async (entry) => {
-        const path = join(this.stagingRoot, entry.name);
-        try {
-          const info = await stat(path);
-          if (info.mtimeMs < cutoff) await rm(path, { recursive: true, force: true });
-        } catch {
-          // ignore races
-        }
+      const historyRoot = join(this.home, 'updates', 'history');
+      const entries = (await readdir(historyRoot, { withFileTypes: true }))
+        .filter((entry) => entry.isFile())
+        .map((entry) => entry.name)
+        .sort()
+        .reverse();
+      await Promise.all(entries.slice(this.historyKeep).map((name) => (
+        rm(join(historyRoot, name), { force: true }).catch(() => {})
+      )));
+    } catch {
+      // History is optional.
+    }
+    try {
+      const backups = (await readdir(this.backupRoot, { withFileTypes: true }))
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+      await Promise.all(backups.map(async (name) => {
+        const path = join(this.backupRoot, name);
+        const info = await stat(path).catch(() => null);
+        if (info && info.mtimeMs < failedCutoff) await rm(path, { recursive: true, force: true });
       }));
     } catch {
-      // staging may not exist
+      // Backup root may not exist.
     }
   }
 }

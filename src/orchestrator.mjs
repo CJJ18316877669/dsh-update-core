@@ -393,6 +393,18 @@ export class UpdateOrchestrator {
           to: journal.to,
         });
       }
+      if (this.watchdog && typeof this.watchdog.startHelper === 'function'
+        && typeof this.backend.helperConfig === 'function') {
+        const helper = this.backend.helperConfig();
+        if (helper && helper.profile && helper.port) {
+          await this.watchdog.startHelper({
+            journalPath: this.journal.path || journal.path,
+            profile: helper.profile,
+            port: helper.port,
+            timeoutMs: helper.timeoutMs,
+          });
+        }
+      }
 
       this.activation = await this.backend.activate(this.staged);
       await this.touchLock();
@@ -406,6 +418,18 @@ export class UpdateOrchestrator {
           message: 'health check failed',
           details: { checks: health && health.checks, details: health && health.details },
         });
+      }
+      if (health.delegated === true) {
+        this.stage = 'delegated';
+        this.setState('activating', {
+          progress: { percent: 100, stage: 'delegated-to-desktop' },
+          result: { delegated: true, version: this.release.version },
+        });
+        this.telemetry.emit('update.delegated', {
+          fromVersion: journal.from,
+          toVersion: journal.to,
+        });
+        return this.getState();
       }
 
       if (this.activation && typeof this.activation.commit === 'function') {
@@ -626,6 +650,11 @@ export class UpdateOrchestrator {
     } catch (error) {
       this.logger.warn('failed to discard cancelled journal', error);
     }
+    if (this.staged && typeof this.backend.discardStaged === 'function') {
+      await this.backend.discardStaged(this.staged).catch((error) => {
+        this.logger.warn('failed to discard cancelled staging', error);
+      });
+    }
     this.setState(this.plan && this.plan.disables > 0 ? 'available-incompatible' : 'available', {
       progress: { percent: 0, stage: 'cancelled' },
       result: { cancelled: true },
@@ -842,6 +871,24 @@ export class UpdateOrchestrator {
   async recoverInternal(options = {}) {
     const currentVersion = options.currentVersion || await this.backend.getCurrentVersion();
     const journalResult = await this.journal.recover({ currentVersion });
+    if (journalResult.action === 'verify' && journalResult.journal) {
+      const journal = journalResult.journal;
+      const health = await this.backend.health(null);
+      if (health && health.ok === true && health.delegated !== true) {
+        await this.journal.transition('committed', { health, recovered: true });
+        if (this.watchdog && typeof this.watchdog.beat === 'function') {
+          await this.watchdog.beat().catch(() => {});
+        }
+        this.setState('succeeded', {
+          currentVersion: journal.to,
+          targetVersion: null,
+          progress: { percent: 100, stage: 'recovered' },
+          result: { updated: true, version: journal.to, recovered: true },
+        });
+        return { action: 'committed', journal: await this.journal.read(), health };
+      }
+      return { action: 'verify-pending', journal, health };
+    }
     if (journalResult.action === 'rollback' && journalResult.journal) {
       const journal = journalResult.journal;
       try {

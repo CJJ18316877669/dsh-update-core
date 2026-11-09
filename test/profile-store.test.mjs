@@ -143,6 +143,16 @@ test('profile-store: unrelated external edits survive a managed restore', async 
   assert.ok(!restored.includes('disabled: true\n  config:\n    greeting'));
 });
 
+test('profile-store: a crash after patch restore but before record cleanup is recoverable', async () => {
+  const { patch, restore, store } = await profile();
+  await store.disable({ name: 'plugin-alpha' }, 'crash-window');
+  const backup = JSON.parse(await readFile(restore, 'utf8'));
+  await writeFile(patch, backup.disabled['plugin-alpha'].originalText, 'utf8');
+  assert.deepEqual(await store.enable('plugin-alpha'), { name: 'plugin-alpha' });
+  assert.deepEqual(JSON.parse(await readFile(restore, 'utf8')).disabled, {});
+  assert.deepEqual(await store.list(), {});
+});
+
 test('profile-store: list uses patch as truth, never restore backup', async () => {
   const { patch, restore, store } = await profile();
   await store.disable({ name: 'plugin-alpha' }, 'truth');

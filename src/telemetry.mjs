@@ -73,6 +73,82 @@ export class MemorySink {
   }
 }
 
+/**
+ * Opt-in HTTP sink. Disabled by default; the endpoint is fixed and must be
+ * HTTPS (localhost may use HTTP for local development). A failed batch is
+ * discarded, never retried in a loop, and never affects an update.
+ */
+export class HttpSink {
+  /**
+   * @param {{url:string, enabled?:boolean, timeoutMs?:number, batchSize?:number, maxQueue?:number, fetchImpl?:Function}} options
+   */
+  constructor(options) {
+    let endpoint;
+    try {
+      endpoint = new URL(options.url);
+    } catch {
+      throw new TypeError('HttpSink requires a valid url');
+    }
+    const local = endpoint.hostname === 'localhost' || endpoint.hostname === '127.0.0.1' || endpoint.hostname === '::1';
+    if (endpoint.username || endpoint.password) throw new TypeError('telemetry endpoint must not contain credentials');
+    if (endpoint.protocol !== 'https:' && !(local && endpoint.protocol === 'http:')) {
+      throw new TypeError('telemetry endpoint must use https');
+    }
+    this.url = endpoint.toString();
+    this.enabled = options.enabled === true;
+    this.timeoutMs = options.timeoutMs ?? 3000;
+    this.batchSize = options.batchSize ?? 20;
+    this.maxQueue = options.maxQueue ?? 200;
+    this.fetchImpl = options.fetchImpl || globalThis.fetch;
+    this.events = [];
+    this.dropped = 0;
+    this.failures = 0;
+    this.sent = 0;
+    this.pending = null;
+  }
+
+  write(event) {
+    if (!this.enabled) return false;
+    this.events.push(event);
+    while (this.events.length > this.maxQueue) {
+      this.events.shift();
+      this.dropped += 1;
+    }
+    if (this.events.length >= this.batchSize) return this.flush();
+    return true;
+  }
+
+  async flush() {
+    if (!this.enabled || this.events.length === 0) return true;
+    if (this.pending) return this.pending;
+    const batch = this.events.splice(0, this.batchSize);
+    this.pending = (async () => {
+      try {
+        const response = await this.fetchImpl(this.url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ schema: 1, events: batch }),
+          signal: AbortSignal.timeout(this.timeoutMs),
+        });
+        if (!response || response.ok === false) throw new Error(`telemetry responded ${response?.status || 'unknown'}`);
+        this.sent += batch.length;
+        return true;
+      } catch {
+        this.failures += 1;
+        this.dropped += batch.length;
+        return false;
+      } finally {
+        this.pending = null;
+      }
+    })();
+    return this.pending;
+  }
+
+  async close() {
+    await this.flush();
+  }
+}
+
 export class Telemetry {
   /**
    * @param {{sink?:{write:(event:Record<string,unknown>)=>unknown}, enabled?:boolean, sampleRates?:Record<string,number>, random?:()=>number, clock?:()=>Date, home?:string}} [options]

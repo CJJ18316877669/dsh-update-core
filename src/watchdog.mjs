@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { readJson, writeJsonAtomic, quarantine } from './json-store.mjs';
 
@@ -15,6 +16,38 @@ export class Watchdog {
     this.home = options.home;
     this.clock = options.clock || (() => Date.now());
     this.path = join(this.home, 'updates', 'watchdog.json');
+    this.helperPath = options.helperPath || null;
+    this.helper = null;
+  }
+
+  /**
+   * Detached helper survives the orchestrator. It receives only the four
+   * contract arguments; no URLs, commands or arbitrary paths come from callers.
+   * @param {{journalPath:string, profile:string, port:number, timeoutMs?:number, spawnImpl?:Function}} input
+   */
+  async startHelper(input) {
+    if (!this.helperPath) return null;
+    if (typeof input.journalPath !== 'string' || typeof input.profile !== 'string'
+      || !Number.isInteger(input.port)) {
+      throw new TypeError('watchdog helper requires journalPath, profile and port');
+    }
+    if (this.helper && this.helper.exitCode === null) return this.helper;
+    const spawnImpl = input.spawnImpl || spawn;
+    const child = spawnImpl(process.execPath, [
+      this.helperPath,
+      '--journal', input.journalPath,
+      '--profile', input.profile,
+      '--port', String(input.port),
+      '--timeout', String(input.timeoutMs ?? 90000),
+    ], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+      shell: false,
+    });
+    child.unref();
+    this.helper = child;
+    return child;
   }
 
   /** @returns {Promise<Record<string, any>|null>} */

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { I18n, SUPPORTED_LOCALES, CORE_KEYS, CATALOGS, normalizeLocale } from '../src/i18n.mjs';
-import { Telemetry, MemorySink, redact } from '../src/telemetry.mjs';
+import { Telemetry, MemorySink, HttpSink, redact } from '../src/telemetry.mjs';
 import { UpdateError, asUpdateError, isAbortError, AbortedError, INTERNAL_TO_PUBLIC } from '../src/errors.mjs';
 
 test('i18n: all built-in locales cover core result keys', () => {
@@ -83,6 +83,50 @@ test('telemetry: sampling, disabled mode and sink failure', () => {
   const failing = new Telemetry({ sink: { write() { throw new Error('boom'); } } });
   assert.equal(failing.emit('x', {}), false);
   assert.equal(failing.failures, 1);
+});
+
+test('telemetry: HttpSink is opt-in, batches and drops failures without affecting update', async () => {
+  let calls = 0;
+  const disabled = new HttpSink({ url: 'https://telemetry.example/v1', fetchImpl: async () => { calls += 1; } });
+  disabled.write({ event: 'x' });
+  await disabled.flush();
+  assert.equal(calls, 0);
+
+  const bodies = [];
+  const sink = new HttpSink({
+    url: 'https://telemetry.example/v1',
+    enabled: true,
+    batchSize: 2,
+    fetchImpl: async (url, request) => {
+      calls += 1;
+      bodies.push(JSON.parse(request.body));
+      return { ok: true, status: 202 };
+    },
+  });
+  const telemetry = new Telemetry({ sink, sampleRates: { 'update.stage': 1 } });
+  telemetry.emit('update.started', { updates: 2, path: '/home/alice/.dsh' });
+  telemetry.emit('update.succeeded', { durationMs: 10 });
+  await sink.flush();
+  assert.equal(calls, 1);
+  assert.equal(bodies[0].events.length, 2);
+  assert.equal(bodies[0].events[0].path, '/home/<user>/.dsh');
+
+  const failing = new HttpSink({
+    url: 'https://telemetry.example/v1',
+    enabled: true,
+    batchSize: 1,
+    fetchImpl: async () => { throw new Error('offline'); },
+  });
+  assert.equal(await failing.flush(), true);
+  assert.equal(await failing.write({ event: 'x' }), false);
+  assert.equal(failing.failures, 1);
+  assert.equal(failing.dropped, 1);
+});
+
+test('telemetry: HttpSink rejects insecure endpoints and credentials', () => {
+  assert.throws(() => new HttpSink({ url: 'http://telemetry.example/v1' }), /https/);
+  assert.throws(() => new HttpSink({ url: 'https://user:pw@telemetry.example/v1' }), /credentials/);
+  assert.throws(() => new HttpSink({ url: 'not a url' }), /valid url/);
 });
 
 test('errors: spec fields, wrappers and abort detection', () => {

@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { ElectronUpdaterBackend } from '../src/backends/electron-updater.mjs';
+import { UpdateOrchestrator } from '../src/orchestrator.mjs';
+import { UpdateJournal } from '../src/journal.mjs';
+import { Watchdog } from '../src/watchdog.mjs';
+import { PluginGate } from '../src/plugin-gate.mjs';
 
 class FakeUpdater extends EventEmitter {
   constructor(version = '0.2.3') {
@@ -47,6 +54,49 @@ test('electron backend: check, download progress and install handoff', async () 
   const rollback = await backend.rollback();
   assert.equal(rollback.ok, false);
   assert.equal(rollback.mode, 'safe-mode');
+});
+
+test('electron backend: delegated health never commits before the restarted host verifies', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'dsh-electron-'));
+  const updater = new FakeUpdater();
+  let healthy = false;
+  const coordinator = {
+    health: async () => healthy
+      ? { ok: true, checks: ['version', 'plugins'] }
+      : { ok: true, delegated: true, checks: ['delegated-to-desktop'] },
+    drain: async () => ({ ok: true, tasks: 0 }),
+    quitAndInstall: async () => { updater.installed += 1; },
+  };
+  const backend = new ElectronUpdaterBackend({
+    autoUpdater: updater,
+    currentVersion: '0.2.2-rc.1',
+    coordinator,
+  });
+  const journal = new UpdateJournal({ home });
+  const orchestrator = new UpdateOrchestrator({
+    backend,
+    gate: new PluginGate(),
+    journal,
+    watchdog: new Watchdog({ home }),
+    home,
+  });
+  const state = await orchestrator.start({ confirm: true });
+  assert.equal(state.state, 'activating');
+  assert.equal(state.result.delegated, true);
+  assert.equal((await journal.read()).state, 'verifying');
+
+  healthy = true;
+  const restarted = new UpdateOrchestrator({
+    backend,
+    gate: new PluginGate(),
+    journal,
+    watchdog: new Watchdog({ home }),
+    home,
+  });
+  const recovered = await restarted.recover({ currentVersion: '0.2.3' });
+  assert.equal(recovered.action, 'committed');
+  assert.equal((await journal.read()).state, 'committed');
+  assert.equal(restarted.getState().state, 'succeeded');
 });
 
 test('electron backend: missing capabilities map to UPD-702', async () => {

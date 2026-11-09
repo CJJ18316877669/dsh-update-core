@@ -1,0 +1,39 @@
+name: Feature request
+description: Propose a capability, platform improvement or integration.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or operational problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: invariant
+    attributes:
+      label: Invariants and failure behavior
+      description: What must remain true, and what should happen when the new path fails?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Plugin compatibility
+        - Staging or health verification
+        - Atomic switch or rollback
+        - Watchdog and recovery
+        - npm/pnpm backend
+        - Desktop integration
+        - Telemetry or privacy
+        - Live prototype or accessibility
+        - Documentation and release
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

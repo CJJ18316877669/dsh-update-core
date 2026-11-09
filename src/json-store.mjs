@@ -1,24 +1,15 @@
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { readFile, rename, unlink } from 'node:fs/promises';
+import { writeFileAtomic } from './platform/fs.mjs';
 
 /**
- * 原子写 JSON：先写同目录临时文件，再 rename。
- * 避免进程崩溃时留下半截 journal / watchdog。
+ * 原子写 JSON：同目录临时文件 + fsync + 有界 rename 重试。
+ * 避免进程崩溃时留下半截 journal / watchdog，并吸收 Windows 共享冲突。
  * @param {string} file
  * @param {unknown} value
  */
 export async function writeJsonAtomic(file, value) {
-  await mkdir(dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
   const payload = `${JSON.stringify(value, null, 2)}\n`;
-  try {
-    await writeFile(tmp, payload, { encoding: 'utf8', mode: 0o600 });
-    await rename(tmp, file);
-  } catch (error) {
-    await unlink(tmp).catch(() => {});
-    throw error;
-  }
+  await writeFileAtomic(file, payload, { mode: 0o600 });
 }
 
 /**

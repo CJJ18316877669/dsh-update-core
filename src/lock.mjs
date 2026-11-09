@@ -1,7 +1,8 @@
-import { mkdir, open, readFile, unlink } from 'node:fs/promises';
+import { mkdir, open, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { UpdateError } from './errors.mjs';
+import { unlinkWithRetry } from './platform/fs.mjs';
 
 /**
  * 单飞锁：每个 DSH_HOME 只允许一个更新进程。
@@ -49,7 +50,24 @@ export class FileLock {
             details: { pid: owner.pid, acquiredAt: owner.acquiredAt },
           });
         }
-        await unlink(this.path).catch(() => {});
+        if (owner) {
+          const confirmation = await this.readOwner();
+          if (!confirmation || confirmation.token !== owner.token) {
+            throw new UpdateError('UPD-303', {
+              message: 'update lock changed during stale takeover',
+              details: { pid: confirmation && confirmation.pid },
+            });
+          }
+        }
+        try {
+          await unlinkWithRetry(this.path);
+        } catch (error) {
+          throw new UpdateError('UPD-303', {
+            message: 'could not remove the stale update lock',
+            details: { cause: error instanceof Error ? error.message : String(error) },
+            cause: error,
+          });
+        }
       }
     }
     throw new UpdateError('UPD-303', { message: 'could not acquire update lock' });
@@ -83,9 +101,7 @@ export class FileLock {
       this.token = null;
       return false;
     }
-    await unlink(this.path).catch((error) => {
-      if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'ENOENT') throw error;
-    });
+    await unlinkWithRetry(this.path);
     this.token = null;
     return true;
   }

@@ -1,6 +1,6 @@
 # C-004 profile 原子切换与回滚
 
-状态：待实现
+状态：已合入（2026-11-09，本地；远端 Windows/macOS runner 待跑）
 依赖：C-003（进程不杀干净，rename 必失败，测不出真实问题）
 阻塞：—
 
@@ -33,10 +33,10 @@ await rename(staged.path, this.profileDir);
 6. **回滚终局**：旧版拿不回来 → `safe-mode`，journal `failed` + `safeMode: true`，并且必须把 `.failed-*` 目录的绝对路径写进 journal，供人工恢复。
 7. **路径边界**：所有 rename / cp 的源与目标都在 `$DSH_HOME/updates` 或 `$DSH_HOME/profiles` 下。现有前缀校验（`:464-467`）不得移除。
 
-## 待确认
+## 待真机确认
 
-- `dsh` 运行时是否会持有 profile 目录内的文件句柄？如果会，"先排空再切换"（`drain`）就要覆盖到所有常驻进程，而不只是任务队列。
-- Windows 上是否需要在 rename 前显式清空该目录的只读属性？npm 安装出来的部分文件可能带只读位。
+- `NpmBackend.drain` 当前只提供注入接口，尚未接管真实 dsh 常驻进程。宿主必须在 `activate` 前停止所有持有 profile 句柄的进程；重试只能吸收短时杀软/索引器占用，不能替代排空。
+- 现有实现未主动清除只读属性；若真实 Windows profile 出现只读文件阻塞，将按 `EPERM` 有界重试并安全失败，禁止先删后换。
 
 ## 禁止
 

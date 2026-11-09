@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a reproducible updater defect that is not a security vulnerability.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include credentials, prompts, private plugin configuration, full home paths or logs containing secrets. Report vulnerabilities through SECURITY.md, not this form.
+  - type: input
+    id: version
+    attributes:
+      label: Updater version
+      placeholder: 0.2.0
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, architecture, Node.js, dsh and backend (npm/pnpm/Desktop)
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Use a temporary DSH_HOME and fictional/plugin names where possible.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the public error code and journal state, not private paths or config.
+    validations:
+      required: true
+  - type: dropdown
+    id: recovery
+    attributes:
+      label: Recovery outcome
+      options:
+        - No profile change
+        - Rolled back successfully
+        - Safe mode entered
+        - Did not attempt an update
+    validations:
+      required: true

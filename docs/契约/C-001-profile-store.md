@@ -1,6 +1,6 @@
 # C-001 ProfileStore：让"禁用"在真实 dsh 中生效
 
-状态：待实现
+状态：已合入（2026-11-09，本地）
 依赖：C-003（Windows 启动修好，否则本机跑不起来）
 阻塞：C-002
 
@@ -31,18 +31,11 @@ enable(handle: {name: string} | string) => Promise<{name: string}>
 6. **拒绝核心插件**：`isCorePlugin(plugin)` 为真时抛错，且文件不得被修改。
 7. **原子写**：临时文件 + rename，崩溃不留半截 YAML。
 
-## 待确认
+## 已确认
 
-**实现前必须先回答，答不出来就不要写代码。**
-
-`cordis.patch.yml` 里"禁用某个插件"的准确写法是哪一种？
-
-- a) 该插件条目下加 `disabled: true`
-- b) 顶层维护一个 `disabled:` 列表
-- c) 从 patch 中移除该条目
-- d) 完全不同的结构
-
-验证方法：拿一个真实 fixture profile，改一处，跑 `dsh --dump-config`，看该插件是否从配置中消失。**这一步没做，写出来的实现只是看起来对。**
+- 写法是目标条目下 `disabled: true`。
+- 真实 `@deepseek-ai/dsh-app-boot@0.2.2-rc.1` 文档明确：Loader 跳过 disabled 条目；`--dump-config` **会保留并输出 disabled 声明**，不能用“输出中整行消失”作为验收。
+- 本机 Node 22 低于目标 dsh 要求的 Node 24.9，未执行真实 24.x 启动；该外部验收记录在 HANDOVER。
 
 ## 禁止
 
@@ -59,8 +52,8 @@ npm test -- --test-name-pattern profile-store
 
 必须通过的五条：
 
-1. fixture profile 上 `disable` → `dsh --dump-config` 输出不含该插件
-2. 紧接 `enable` → `--dump-config` 恢复，且 patch 文件与原始 fixture 逐字节一致（`diff` 为空）
+1. fixture profile 上 `disable` → 目标条目含 `disabled: true`，Loader 运行时跳过；`--dump-config` 仍会显示该声明
+2. 紧接 `enable` → patch 文件与原始 fixture 逐字节一致（`diff` 为空）
 3. `disable` 两次 → 文件不变（幂等）
 4. core 插件 → 抛错，且文件未变
 5. 脏输入：CRLF、无结尾换行、中文注释、缩进为 2 空格与 4 空格混用 → 均正确处理，其余内容不变

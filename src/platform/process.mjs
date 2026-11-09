@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { AbortedError, UpdateError } from '../errors.mjs';
 
 const execFileAsync = promisify(execFile);
-const NPM_COMMANDS = new Set(['npm', 'npm.cmd']);
+const PACKAGE_MANAGER_COMMANDS = new Set(['npm', 'npm.cmd', 'pnpm', 'pnpm.cmd']);
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -24,30 +24,35 @@ async function firstExisting(paths) {
   return null;
 }
 
-async function resolveNpmCli() {
-  const candidates = [
-    process.env.npm_execpath,
-    join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
-  ];
+async function resolvePackageManagerCli(manager) {
+  const candidates = [];
+  if (process.env.npm_execpath && process.env.npm_execpath.toLowerCase().includes(manager)) {
+    candidates.push(process.env.npm_execpath);
+  }
+  candidates.push(join(dirname(process.execPath), 'node_modules', manager, 'bin', manager === 'npm' ? 'npm-cli.js' : 'pnpm.cjs'));
   if (process.env.APPDATA) {
-    candidates.push(join(process.env.APPDATA, 'npm', 'node_modules', 'npm', 'bin', 'npm-cli.js'));
+    candidates.push(join(process.env.APPDATA, 'npm', 'node_modules', manager, 'bin', manager === 'npm' ? 'npm-cli.js' : 'pnpm.cjs'));
   }
   for (const entry of (process.env.PATH || '').split(delimiter)) {
     const directory = entry.trim().replace(/^"|"$/g, '');
-    if (directory) candidates.push(join(directory, 'node_modules', 'npm', 'bin', 'npm-cli.js'));
+    if (!directory) continue;
+    if (manager === 'pnpm') candidates.push(join(directory, 'pnpm.cjs'));
+    candidates.push(join(directory, 'node_modules', manager, 'bin', manager === 'npm' ? 'npm-cli.js' : 'pnpm.cjs'));
+    if (manager === 'pnpm') candidates.push(join(directory, '..', 'pnpm', 'bin', 'pnpm.cjs'));
   }
   return firstExisting(candidates);
 }
 
 async function resolveLaunch(command, args) {
-  if (process.platform !== 'win32' || !NPM_COMMANDS.has(command.toLowerCase())) {
+  if (process.platform !== 'win32' || !PACKAGE_MANAGER_COMMANDS.has(command.toLowerCase())) {
     return { command, args, shell: false };
   }
-  const npmCli = await resolveNpmCli();
-  if (npmCli) {
-    return { command: process.execPath, args: [npmCli, ...args], shell: false };
+  const manager = command.toLowerCase().startsWith('pnpm') ? 'pnpm' : 'npm';
+  const cli = await resolvePackageManagerCli(manager);
+  if (cli) {
+    return { command: process.execPath, args: [cli, ...args], shell: false };
   }
-  // 仅 npm 自身允许 shell 退路；参数始终作为数组交给 spawn。
+  // 只允许包管理器自身的受控 shell 退路；参数仍是数组，不拼命令字符串。
   return { command, args, shell: true };
 }
 

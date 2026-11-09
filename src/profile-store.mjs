@@ -1,7 +1,7 @@
-import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { writeJsonAtomic } from './json-store.mjs';
+import { writeFileAtomic } from './platform/fs.mjs';
 import { isCorePlugin } from './plugin-gate.mjs';
 
 function conflict(message) {
@@ -252,15 +252,7 @@ async function readText(file) {
 }
 
 async function writeTextAtomic(file, text) {
-  await mkdir(dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
-  try {
-    await writeFile(tmp, text, { encoding: 'utf8', mode: 0o600 });
-    await rename(tmp, file);
-  } catch (error) {
-    await unlink(tmp).catch(() => {});
-    throw error;
-  }
+  await writeFileAtomic(file, text, { mode: 0o600 });
 }
 
 function emptyRestore() {
@@ -366,6 +358,14 @@ export class ProfileStore {
 
     if (!record) {
       if (disabledState(entry)) throw new Error(`no restore data for disabled plugin: ${name}`);
+      return { name };
+    }
+    if ((!entry || !disabledState(entry)) && text === record.originalText) {
+      // A previous enable restored the patch but crashed before clearing its
+      // recovery record. Completing that cleanup is safe and idempotent.
+      const disabled = { ...restore.disabled };
+      delete disabled[name];
+      await writeJsonAtomic(this.restore, { ...restore, disabled });
       return { name };
     }
     if (!entry || entry.raw !== record.managedEntry || !disabledState(entry)) {

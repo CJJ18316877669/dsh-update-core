@@ -4,12 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { UpdateJournal } from './journal.mjs';
 import { Watchdog } from './watchdog.mjs';
-import { PluginGate } from './plugin-gate.mjs';
-import { UpdateOrchestrator } from './orchestrator.mjs';
-import { FakeBackend } from './backends/fake.mjs';
-import { I18n } from './i18n.mjs';
-import { Telemetry, MemorySink } from './telemetry.mjs';
 import { isUpdateError } from './errors.mjs';
+import { DEMO_SCENARIOS, createDemoRuntime } from './demo-runtime.mjs';
+import { createDemoServer } from './local-server.mjs';
 
 function parseArgs(argv) {
   const args = { _: [] };
@@ -27,60 +24,6 @@ function parseArgs(argv) {
     }
   }
   return args;
-}
-
-function plugin(name, version, engines, extra = {}) {
-  return {
-    name,
-    version,
-    kind: extra.kind || 'plugin',
-    protected: extra.protected || false,
-    spec: extra.spec || 'registry',
-    manifest: engines === null ? {} : { engines: { dsh: engines } },
-  };
-}
-
-function scenarioBackend(scenario, delayMs) {
-  if (scenario === 'partial') {
-    return new FakeBackend({
-      delayMs,
-      plugins: [
-        plugin('dsh-plugin-office', '1.4.2', '>=0.2.0'),
-        plugin('dsh-plugin-git-review', '0.9.1', '>=0.2.0'),
-        plugin('dsh-plugin-foo', '1.2.0', '>=0.3.0'),
-        plugin('dsh-plugin-bar', '0.4.1', '>=0.3.0'),
-        plugin('@deepseek-ai/dsh-tool-terminal', '0.2.2-rc.1', '>=0.2.0', { kind: 'core', protected: true }),
-      ],
-      available: {
-        'dsh-plugin-office': [{ version: '1.4.2', manifest: { engines: { dsh: '>=0.2.0' } } }],
-        'dsh-plugin-git-review': [
-          { version: '0.9.1', manifest: { engines: { dsh: '>=0.2.0' } } },
-          { version: '1.0.0', manifest: { engines: { dsh: '>=0.2.0' } } },
-        ],
-        'dsh-plugin-foo': [],
-        'dsh-plugin-bar': [],
-        '@deepseek-ai/dsh-tool-terminal': [{ version: '0.2.3', manifest: { engines: { dsh: '>=0.2.0' } } }],
-      },
-    });
-  }
-  if (scenario === 'blocked') {
-    return new FakeBackend({
-      delayMs,
-      plugins: [
-        plugin('dsh-plugin-office', '1.4.2', '>=0.2.0'),
-        plugin('@deepseek-ai/dsh-tool-terminal', '0.2.2-rc.1', '>=0.3.0', { kind: 'core', protected: true }),
-      ],
-      available: {
-        'dsh-plugin-office': [{ version: '1.4.2', manifest: { engines: { dsh: '>=0.2.0' } } }],
-        '@deepseek-ai/dsh-tool-terminal': [],
-      },
-    });
-  }
-  if (scenario === 'rollback') return new FakeBackend({ delayMs, failAt: ['health'] });
-  if (scenario === 'safe') return new FakeBackend({ delayMs, failAt: ['health', 'rollback', 'snapshot'] });
-  if (scenario === 'download-fail') return new FakeBackend({ delayMs, failAt: ['download'] });
-  if (scenario === 'cancel') return new FakeBackend({ delayMs: delayMs || 40 });
-  return new FakeBackend({ delayMs });
 }
 
 function printState(state, i18n) {
@@ -105,7 +48,7 @@ function printState(state, i18n) {
   }
 }
 
-const SCENARIOS = new Set(['success', 'partial', 'blocked', 'rollback', 'safe', 'download-fail', 'cancel']);
+const SCENARIOS = DEMO_SCENARIOS;
 
 async function runDemo(args) {
   const scenario = typeof args.scenario === 'string' ? args.scenario : 'success';
@@ -117,23 +60,8 @@ async function runDemo(args) {
   const locale = typeof args.lang === 'string' ? args.lang : 'zh-CN';
   const home = typeof args.home === 'string' ? args.home : await mkdtemp(join(tmpdir(), 'dsh-update-'));
   const delayMs = args.fast ? 0 : Number(args.delayMs || 30);
-  const i18n = new I18n(locale);
-  const telemetry = new Telemetry({ sink: new MemorySink(), home, sampleRates: { 'update.stage': 1 } });
-  const backend = scenarioBackend(scenario, delayMs);
-  const journal = new UpdateJournal({ home });
-  const watchdog = new Watchdog({ home });
-  const gate = new PluginGate();
-  const orchestrator = new UpdateOrchestrator({
-    backend,
-    gate,
-    journal,
-    watchdog,
-    telemetry,
-    i18n,
-    home,
-    channel: 'stable',
-    logger: { info() {}, warn() {}, error() {} },
-  });
+  const runtime = createDemoRuntime({ home, scenario, delayMs, locale });
+  const { i18n, telemetry, journal, orchestrator } = runtime;
 
   process.stdout.write(`home: ${home}\nscenario: ${scenario}\nlocale: ${i18n.locale}\n`);
   const states = [];
@@ -206,10 +134,32 @@ async function runStatus(args) {
   return 0;
 }
 
+async function runUi(args) {
+  const scenario = typeof args.scenario === 'string' ? args.scenario : 'success';
+  if (!DEMO_SCENARIOS.has(scenario) || scenario === 'cancel') {
+    process.stderr.write(`unsupported UI scenario: ${scenario}\n`);
+    return 2;
+  }
+  const port = args.port === undefined ? 0 : Number(args.port);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    process.stderr.write('invalid --port\n');
+    return 2;
+  }
+  const app = await createDemoServer({ port, scenario });
+  process.stdout.write(`Live prototype: ${app.url}\nPress Ctrl+C to stop.\n`);
+  await new Promise((resolvePromise) => {
+    process.once('SIGINT', resolvePromise);
+    process.once('SIGTERM', resolvePromise);
+  });
+  await app.close();
+  return 0;
+}
+
 function usage() {
   process.stdout.write([
     'Usage:',
     '  node src/cli.mjs demo [--scenario success|partial|blocked|rollback|safe|download-fail|cancel] [--lang zh-CN] [--home DIR] [--fast]',
+    '  node src/cli.mjs ui [--scenario success|partial|blocked|rollback|safe|download-fail] [--port 0]',
     '  node src/cli.mjs status [--home DIR]',
     '',
   ].join('\n'));
@@ -223,6 +173,7 @@ async function main() {
     return 0;
   }
   if (command === 'demo') return runDemo(args);
+  if (command === 'ui') return runUi(args);
   if (command === 'status') return runStatus(args);
   usage();
   return 2;

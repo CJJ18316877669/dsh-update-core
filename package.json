@@ -1,15 +1,49 @@
 {
   "name": "dsh-update-core",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.2.0",
+  "private": false,
   "type": "module",
-  "description": "DeepSeek Harness 一键更新的参考实现：Orchestrator、Journal、watchdog、插件门控与多后端",
+  "description": "Transactional DeepSeek Harness updates with plugin compatibility gates, atomic rollback, and crash recovery",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CJJ18316877669/dsh-update-core.git"
+  },
+  "main": "./src/index.mjs",
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "PRIVACY.md"
+  ],
+  "keywords": [
+    "deepseek",
+    "dsh",
+    "updater",
+    "rollback",
+    "plugin-compatibility"
+  ],
+  "bugs": {
+    "url": "https://github.com/CJJ18316877669/dsh-update-core/issues"
+  },
+  "homepage": "https://github.com/CJJ18316877669/dsh-update-core#readme",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./backends/npm": "./src/backends/npm.mjs",
+    "./backends/electron-updater": "./src/backends/electron-updater.mjs",
+    "./package.json": "./package.json"
+  },
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "test": "node --test \"test/*.test.mjs\"",
     "demo": "node src/cli.mjs demo",
-    "status": "node src/cli.mjs status"
+    "ui": "node src/cli.mjs ui",
+    "status": "node src/cli.mjs status",
+    "smoke:registry": "node scripts/smoke-registry.mjs",
+    "previews": "node scripts/capture-previews.mjs"
   }
 }

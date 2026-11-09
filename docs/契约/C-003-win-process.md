@@ -1,6 +1,6 @@
 # C-003 Windows 启动与进程树
 
-状态：待实现
+状态：已合入（2026-11-09，本地；远端 Windows runner 待跑）
 依赖：—
 阻塞：C-001、C-002（本机跑不起来，后面都验不了）
 
@@ -36,10 +36,10 @@ killTree(child, {graceMs}) => Promise<void>
 
 注意：`detached: true` 在 POSIX 上会脱离父进程组，必须显式 `unref` 之外的清理逻辑，否则测试进程会挂住。
 
-## 待确认
+## 已确认
 
-- Node 最低版本要明确到哪个小版本？`.cmd` 启动行为与 `fs.cp` 的软链行为都随补丁版本变过，`package.json` 的 `engines` 建议写死一个下限，不要写 `>=20`。
-- npm 是通过 `npm-cli.js` 走 `execPath`，还是走 `corepack`？取决于目标用户怎么装 dsh。
+- 更新器使用 Node ≥20；目标 dsh 自身的 `engines.node` 在 `check()` 阶段单独校验，不能用更新器的下限推断 dsh 可运行。
+- Windows 优先解析 `npm-cli.js` / `pnpm.cjs` 并用 `process.execPath` 启动；只有解析失败才使用包管理器命令白名单的受控 shell 退路。
 
 ## 禁止
 

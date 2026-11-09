@@ -1,54 +1,75 @@
-# DeepSeek Harness 一键更新按钮设计方案
+# DeepSeek Harness 一键更新器
 
-> 版本：1.2  
-> 日期：2026-11-08  
-> 适用：DeepSeek Harness（`dsh`）0.2.x，Cordis「一切皆插件」架构  
+> 版本：2.0
+> 日期：2026-11-09
+> 适用：DeepSeek Harness（`dsh`）0.2.x，Cordis「一切皆插件」架构
 > 目标：一个按钮完成 Harness 版本更新，并保证现有插件在新版本上仍可加载；失败可回滚，结果可解释。
 
----
-
-## 交付物与查看方式
-
-| 文件 | 内容 | 查看方式 |
-|---|---|---|
-| `README.md` | 设计方案、调研与决策记录 | 直接阅读 |
-| `HANDOVER.md` | 交接文档：目标、进展、待办与优先级、约束、风险、后续步骤 | 直接阅读 |
-| `prototype.html` | 可交互单页原型，覆盖 17 个按钮状态 | 双击打开；或 `python -m http.server` 后访问 |
-| `src/` | 零依赖 Node 参考实现：编排、Journal、watchdog、门控、后端、i18n、遥测 | `npm test` / `node src/cli.mjs` |
-| `test/` | 单元与集成用例 | `npm test` |
-| `state-machine.svg` | 主流程、硬阻断、回滚与安全模式分支 | 浏览器或设计工具打开 |
-| `preview*.png` | 6 个关键状态的视觉快照 | 图片查看器 |
-
-原型不依赖网络与构建。右下角 `Prototype` 工具条可切换状态、注入故障、模拟运行中任务；状态命名与第 4.2 节表格一致。原型文案暂为中文，核心链路的可运行实现见下节。
+**当前状态：`dsh-update-core@0.2.0` 可运行、可测试、可复用。** 112 项自动化测试通过；已覆盖真实 `cordis.patch.yml` 禁用/逐字节恢复、staging 启动门控、原子切换、独立 watchdog、跨平台路径与进程树、默认关闭的遥测上报、真实 registry SRI 冒烟，以及 live 原型。
 
 ---
 
-## 参考实现（`src/`）
+## 快速开始
 
-原型背后的更新链路已落成零依赖的 Node 参考实现（Node ≥ 20），可离线测试：
-
-| 模块 | 职责 |
-|---|---|
-| `src/orchestrator.mjs` | 检查 → 解析 → 快照 → 下载/校验/暂存 → 排空 → 切换 → 自检 → 提交；失败回滚、取消、单飞锁 |
-| `src/journal.mjs` | 原子写、状态迁移、终端归档、启动恢复判定 |
-| `src/watchdog.mjs` | 武装、心跳、截止时间、启动次数与版本判定 |
-| `src/plugin-gate.mjs` | `engines.dsh` / peer 判定、五种处置、未声明范围待验证、禁用与恢复存储 |
-| `src/backends/npm.mjs` | dist-tag、SRI 校验、staging 安装、profile 原子切换、快照回滚 |
-| `src/backends/electron-updater.mjs` | 桌面 autoUpdater 适配与安装交接 |
-| `src/backends/fake.mjs` | 内存后端与故障注入，供测试与演示 |
-| `src/i18n.mjs` / `src/telemetry.mjs` | 8 种语言、结果/错误文案、脱敏与采样 |
-| `src/cli.mjs` | `demo` 与 `status` 命令 |
+要求 Node.js ≥ 20；真实 dsh 当前 release 自身要求 Node.js ≥ 24.9.0，更新器会在下载前按目标包的 `engines.node` 拒绝不满足的宿主。
 
 ```bash
-npm test
+npm test                         # 112 项，零依赖
+npm run ui                       # live 原型，默认仅监听 127.0.0.1 的随机端口
+npm run smoke:registry           # 真实 registry + tarball SRI 冒烟
 node src/cli.mjs demo --scenario success --fast
 node src/cli.mjs demo --scenario safe --fast
 node src/cli.mjs status --home <dir>
 ```
 
-`demo` 覆盖 `success` / `partial` / `blocked` / `rollback` / `safe` / `download-fail` / `cancel`；退出码 0/1/2/3 分别表示成功、失败、阻断、安全模式。
+`npm run ui` 输出一个 `http://127.0.0.1:<port>/` 地址。该页面由本地服务提供，通过 SSE 订阅真实 `UpdateOrchestrator`；直接双击 `prototype.html` 则进入离线 UI 演示。服务只绑定 loopback，校验 Host/Origin、一次性进程 token 与 JSON body，不开放任意路径、命令或 registry。
 
-**边界：** npm 后端会真实访问 registry 并在 staging 执行 `npm install --ignore-scripts`，只在指定 `DSH_HOME` 的 profile 内操作；CLI 默认使用内存后端。Desktop 的安装、重启与原生恢复仍由 electron-updater / DesktopUpdateCoordinator 负责；staging 启动自检、`cordis.patch.yml` 写入与遥测上报端点属于宿主集成，参考实现分别用可注入 verifier、`plugins.json` 与内存 sink 代表。
+## 交付物
+
+| 文件 / 目录 | 内容 |
+|---|---|
+| `README.md` | 设计事实源、调研、状态机、流程、兼容、回滚与当前实现边界 |
+| `HANDOVER.md` | 当前实现状态、验收命令、剩余外部风险和交接说明 |
+| `src/` | 零依赖 ESM 实现：编排、Journal、watchdog、ProfileStore、门控、后端、路径/进程/文件系统、i18n、遥测、live server |
+| `test/` | 112 项单元、集成、CLI 契约、故障注入与安全边界用例 |
+| `prototype.html` / `preview*.png` | live/离线双模式原型与 6 张由真实页面重拍的 1080×1100 截图 |
+| `scripts/` | 真实 registry 冒烟与 Edge DevTools 截图脚本 |
+| `LICENSE` / `CHANGELOG.md` / `SECURITY.md` / `PRIVACY.md` | MIT 许可、版本记录、安全与隐私说明 |
+| `.github/workflows/` | 4 平台 × Node 20/22/24 的测试矩阵与 tag 发布流程 |
+
+## 模块与可复用 API
+
+| 模块 | 职责 |
+|---|---|
+| `src/orchestrator.mjs` | 检查 → 解析 → 快照 → 下载/校验/暂存 → staging 自检 → 排空 → 原子切换 → 自检 → 提交；失败回滚、取消、单飞锁、委托状态 |
+| `src/profile-store.mjs` | 以 `cordis.patch.yml` 为唯一事实来源写 `disabled: true`，保留注释/行尾/缩进，`enable` 逐字节恢复 |
+| `src/journal.mjs` | fsync 原子写、7 状态迁移、终端归档、启动恢复判定、staging 证据 |
+| `src/watchdog.mjs` / `src/watchdog-helper.mjs` | 武装、心跳、截止时间、版本判定；detached helper 在主进程失联时按 journal 回滚 |
+| `src/plugin-gate.mjs` | `engines.dsh` / peer 判定、五种处置、staging 回填、证据式禁用 |
+| `src/backends/npm.mjs` | dist-tag、SRI、目标 Node/OS/CPU 预检、staging 安装与启动探测、ProfileStore、原子切换、快照回滚、pnpm/allowBuilds |
+| `src/backends/electron-updater.mjs` | 桌面 autoUpdater 与 Coordinator 适配；`delegated` 不提交事务 |
+| `src/backends/fake.mjs` | 全阶段故障注入，供测试、CLI 和 live 原型 |
+| `src/platform/*.mjs` | Windows/POSIX 进程树、rename 重试与 EXDEV 降级、原子写、官方 `$DSH_HOME` 规则、路径边界 |
+| `src/telemetry.mjs` | 8 语言配套脱敏、采样、内存 sink、默认关闭的 HTTPS `HttpSink` |
+| `src/local-server.mjs` | live 原型的安全 loopback HTTP/SSE 服务 |
+| `src/cli.mjs` | `demo` / `ui` / `status`，退出码契约 0/1/2/3 |
+
+包同时提供子路径导出：`dsh-update-core`、`dsh-update-core/backends/npm`、`dsh-update-core/backends/electron-updater`。
+
+```js
+import { UpdateOrchestrator, UpdateJournal, Watchdog, PluginGate, NpmBackend } from 'dsh-update-core';
+```
+
+## 安全与生命周期不变量
+
+- 不兼容插件只写 `disabled: true`，不删除 `node_modules`；恢复记录只在 `enable` 时用于还原，不作为当前状态来源。
+- staging 在 `applying` 之前完成版本、`--dump-config` 和短时启动探测；失败时正式 profile 字节不变。
+- 所有终端写入先 fsync 再原子 rename；Windows 共享冲突有界重试，跨卷降级为复制 + 全树哈希校验。
+- 回滚不吞 rename 错误；旧 profile 恢复失败会保留 `.failed-*` 绝对路径并进入安全模式。
+- 遥测默认关闭；端点必须 HTTPS，只发聚合字段，失败即丢弃，永不影响更新。
+- 测试和 demo 只使用 OS 临时目录，绝不指向真实 `$DSH_HOME`。
+
+**外部验收边界：** 本机没有 Node 24 + 真实 dsh Desktop 宿主，因此真实 NSIS/macOS 安装、签名/公证、Coordinator 重启后健康检查与真实 profile 的 `--dump-config` 运行验收仍需在对应机器完成。代码提供注入点和明确的安全失败路径，不把模拟结果标记为真机通过。
 
 ---
 
@@ -1168,3 +1189,4 @@ export interface UpdateOrchestrator {
 | 2026-11-07 | 初版：调研、选型、按钮状态机、更新流程、兼容门控、回滚、提示 |
 | 2026-11-07 | 1.1：原型补齐 17 个状态与部分成功分支；修正自检失败分支图；统一错误码映射与自动检查间隔表述 |
 | 2026-11-08 | 1.2：新增 Node 参考实现（Orchestrator / Journal / watchdog / 门控 / npm 与 electron 适配 / i18n / 遥测）、CLI 与完整测试 |
+| 2026-11-09 | 2.0：`0.2.0` 产品化。真实 patch 禁用/staging 门控、watchdog helper、Windows 进程与原子切换、跨平台路径、默认关闭遥测、pnpm/allowBuilds、真实 registry 冒烟、live 原型与发布治理；测试 112 项 |

@@ -549,7 +549,8 @@ export class NpmBackend {
 
   async probeStagingBoot(bin, home, signal) {
     return new Promise((resolve, reject) => {
-      const child = spawn(process.execPath, [bin, '--profile', this.profileName], {
+      const appArgs = this.profileName === 'web' ? ['--no-open', '--port', '0'] : [];
+      const child = spawn(process.execPath, [bin, '--profile', this.profileName, ...appArgs], {
         cwd: home,
         env: { ...process.env, DSH_HOME: home },
         stdio: ['ignore', 'pipe', 'pipe'],

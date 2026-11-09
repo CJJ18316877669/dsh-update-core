@@ -1,7 +1,7 @@
 # DeepSeek Harness 一键更新器 · 交接文档
 
 > 更新时间：2026-11-09（UTC+8）
-> 当前版本：`dsh-update-core@0.2.3`；测试 114 项；仅支持 Windows
+> 当前版本：`dsh-update-core@0.2.4`；测试 114 项；仅支持 Windows
 > 仓库：https://github.com/CJJ18316877669/dsh-update-core
 > 项目根目录：`C:\Users\18316\Desktop\DeepSeek-Harness-一键更新方案`
 
@@ -131,7 +131,7 @@ Backend
 2. **真实 Desktop 升级**：Windows `0.2.2-rc.1` 已安装、EV 签名有效、Host 启动正常；上一版 `0.2.1-rc.5` 安装包可从官方下载。跨版本更新与重启后的真实 Coordinator 健康检查继续在 Windows 上验收。
 3. **远端 CI**：仓库与 `v0.2.0` 已通过 v2rayN 代理上传。首轮 CI 暴露跨平台测试路径问题，已在 `411df98` 修复；最终 12 矩阵运行结果以 GitHub Actions 页面为准。
 4. **真实 native 构建**：allowBuilds 路径已实现，但未在 node-pty/koffi 等真实包上跑工具链。
-5. **npm 发布**：`0.2.3` 打包与 `npm publish --dry-run` 待本次检查通过；本机未登录 npm。Owner 明确选择暂不公开发布，不请求或保存 token。
+5. **npm 发布**：`0.2.4` 打包与 `npm publish --dry-run` 通过；本机未登录 npm。Owner 明确选择暂不公开发布，不请求或保存 token。
 
 处理原则：以上失败时宁可阻止更新或安全回滚，不做“看起来成功”的降级。
 

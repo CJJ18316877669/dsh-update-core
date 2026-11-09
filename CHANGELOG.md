@@ -2,6 +2,12 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
+## [0.2.4] - 2026-11-09
+
+### Fixed
+
+- Run the real web staging probe with `--port 0 --no-open`: staging no longer conflicts with the running Desktop port or opens the user's default browser.
+
 ## [0.2.3] - 2026-11-09
 
 ### Fixed

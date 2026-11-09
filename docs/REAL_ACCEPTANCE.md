@@ -57,6 +57,25 @@ An intentionally invalid `cordis.patch.yml` was added to the isolated real profi
 
 The gate refused the profile, preserved the error code and stderr evidence, and the invalid patch was removed immediately. The restored profile then passed `--dump-config` again. This exposed and fixed the previous misleading `installer exited with 1` diagnostic.
 
+### Real failed plugin
+
+A local `dsh-plugin-crash` was installed into the isolated profile and inserted through a real profile patch. Its Cordis `apply()` threw during boot. The Host stayed alive and printed:
+
+```text
+dsh: warning: 1 entry did not activate
+dsh-plugin-crash (dsh-plugin-crash): Error: UPD-ACCEPTANCE plugin exploded during apply
+```
+
+This proved that process liveness alone gave a false PASS. Staging now treats that warning as failure, returns the failed plugin name, and the real `ProfileStore.disable()` wrote the profile patch so the next boot passed. The temporary plugin and all profile changes were then removed and `--dump-config` passed again.
+
+### Real watchdog process
+
+A separate helper process was started against a real journal, real snapshot and non-listening port. The owner never committed. At the deadline the helper restored the original profile, transitioned the journal to `rolled-back`, disarmed the watchdog and exited with code 2. Sentinel content, journal and watchdog state all matched the expected rollback.
+
+### Windows Desktop upgrade limitation
+
+The official previous installer `deepseek-harness-0.2.1-rc.5-win-x64.exe` and current `nightly.yml` (`0.2.2-rc.1`) were downloaded and verified; the installer has a valid EV signature. A portable extraction starts only after installer registration, and running the older installer over the working installation would downgrade the active application. The official installed-update qualification requires two independently signed test-identity packages plus a disposable installed environment. This cannot be safely substituted on the working host, so no upgrade result is claimed.
+
 ## Windows Desktop
 
 | Item | Result |
@@ -71,9 +90,7 @@ The gate refused the profile, preserved the error code and stderr evidence, and 
 | Launch | Electron main, GPU, network, renderer and Host processes stable |
 | Host health | Process responding; Host loaded `profiles/desktop` from the installed runtime |
 
-The installed application already equaled the latest fixed download, so no reinstall was performed. A real **update** plus Coordinator restart cannot be exercised without downgrading the installed application. Unit and integration coverage for delegated Coordinator health remains in `test/electron-backend.test.mjs`.
-
-The official macOS arm64 DMG is available (`dsh-latest-macos-arm64.dmg`, 268,886,612 bytes), but signing, notarization, installation and Coordinator restart cannot be executed from this Windows host.
+The installed application already equals the latest fixed download. Windows-only scope is enforced in package metadata and CI; the official previous installer `0.2.1-rc.5` is available for the cross-version upgrade check. Unit and integration coverage for delegated Coordinator health remains in `test/electron-backend.test.mjs`.
 
 ## npm publication
 
@@ -91,6 +108,5 @@ npm publish --access public --registry https://registry.npmjs.org
 
 ## Remaining external work
 
-1. Actual Desktop upgrade from an older signed build to a newer one, including Coordinator restart health and rollback.
-2. macOS signing, notarization, DMG installation and restart acceptance.
-3. npm account authorization and final registry publication.
+1. Actual Windows Desktop upgrade from `0.2.1-rc.5` to `0.2.2-rc.1`, including Coordinator restart health and rollback.
+2. npm account authorization and final registry publication.

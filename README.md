@@ -5,7 +5,7 @@
 > 适用：DeepSeek Harness（`dsh`）0.2.x，Cordis「一切皆插件」架构
 > 目标：一个按钮完成 Harness 版本更新，并保证现有插件在新版本上仍可加载；失败可回滚，结果可解释。
 
-**当前状态：`dsh-update-core@0.2.2` 可运行、可测试、可复用。** 113 项自动化测试通过；已覆盖真实 `cordis.patch.yml` 禁用/逐字节恢复、staging 启动门控、原子切换、独立 watchdog、跨平台路径与进程树、默认关闭的遥测上报、真实 registry SRI 冒烟，以及 live 原型。真实 Node 24 + dsh staging 与 Windows Desktop 签名/启动证据见 `docs/REAL_ACCEPTANCE.md`。
+**当前状态：`dsh-update-core@0.2.3` 可运行、可测试、可复用，仅支持 Windows。** 114 项自动化测试通过；已覆盖真实 `cordis.patch.yml` 禁用/逐字节恢复、staging 启动门控、原子切换、独立 watchdog、跨平台路径与进程树、默认关闭的遥测上报、真实 registry SRI 冒烟，以及 live 原型。真实 Node 24 + dsh staging 与 Windows Desktop 签名/启动证据见 `docs/REAL_ACCEPTANCE.md`。
 
 ---
 
@@ -14,7 +14,7 @@
 要求 Node.js ≥ 20；真实 dsh 当前 release 自身要求 Node.js ≥ 24.9.0，更新器会在下载前按目标包的 `engines.node` 拒绝不满足的宿主。
 
 ```bash
-npm test                         # 113 项，零依赖
+npm test                         # 114 项，零依赖
 npm run ui                       # live 原型，默认仅监听 127.0.0.1 的随机端口
 npm run smoke:registry           # 真实 registry + tarball SRI 冒烟
 node src/cli.mjs demo --scenario success --fast
@@ -31,7 +31,7 @@ node src/cli.mjs status --home <dir>
 | `README.md` | 设计事实源、调研、状态机、流程、兼容、回滚与当前实现边界 |
 | `HANDOVER.md` | 当前实现状态、验收命令、剩余外部风险和交接说明 |
 | `src/` | 零依赖 ESM 实现：编排、Journal、watchdog、ProfileStore、门控、后端、路径/进程/文件系统、i18n、遥测、live server |
-| `test/` | 113 项单元、集成、CLI 契约、故障注入与安全边界用例 |
+| `test/` | 114 项单元、集成、CLI 契约、故障注入与安全边界用例 |
 | `prototype.html` / `preview*.png` | live/离线双模式原型与 6 张由真实页面重拍的 1080×1100 截图 |
 | `scripts/` | 真实 registry 冒烟与 Edge DevTools 截图脚本 |
 | `LICENSE` / `CHANGELOG.md` / `SECURITY.md` / `PRIVACY.md` | MIT 许可、版本记录、安全与隐私说明 |
@@ -69,7 +69,7 @@ import { UpdateOrchestrator, UpdateJournal, Watchdog, PluginGate, NpmBackend } f
 - 遥测默认关闭；端点必须 HTTPS，只发聚合字段，失败即丢弃，永不影响更新。
 - 测试和 demo 只使用 OS 临时目录，绝不指向真实 `$DSH_HOME`。
 
-**外部验收边界：** 本机没有 Node 24 + 真实 dsh Desktop 宿主，因此真实 NSIS/macOS 安装、签名/公证、Coordinator 重启后健康检查与真实 profile 的 `--dump-config` 运行验收仍需在对应机器完成。代码提供注入点和明确的安全失败路径，不把模拟结果标记为真机通过。
+**平台范围：仅 Windows x64。** 真实 Node 24 + dsh staging、Windows NSIS 安装签名和真实 Host 启动已经完成；真实跨版本 Desktop 升级与 Coordinator 重启仍在 Windows 上验收。代码提供注入点和明确的安全失败路径，不把模拟结果标记为真机通过。
 
 ---
 
@@ -127,7 +127,7 @@ import { UpdateOrchestrator, UpdateJournal, Watchdog, PluginGate, NpmBackend } f
 - **profile 是用户资产。** `cordis.patch.yml` 里有用户覆盖；patch 按 id 替换整段 config，不做深合并。升级核心时如果 schema 变了，用户配置可能直接失效。
 - **任务不能随便中断。** 桌面端已有「运行中 agent / 排队消息 / 后台任务」检查；Web 端没有统一的排空机制，需要补。
 - **数据格式可能是单向门。** 当前 Session 格式为 V4；旧读取器可能拒绝新载荷版本。跨格式回滚不能只还原代码。
-- **跨平台差异大。** Windows 文件句柄会阻止目录 rename；macOS 要处理签名/公证；Linux 的 `ss`/`lsof` 不一定存在。
+- **Windows 文件语义特殊。** 文件句柄会阻止目录 rename，杀进程、重试退避和文件占用检测必须按 Windows 行为设计。
 
 ### 1.4 设计目标与非目标
 
@@ -168,7 +168,6 @@ import { UpdateOrchestrator, UpdateJournal, Watchdog, PluginGate, NpmBackend } f
 |---|---|---|---|---|---|
 | **electron-updater**（electron-builder） | 高。Electron 原生更新器，dsh Desktop 已在用 | 高。渠道、签名、差量、安装交接齐全；不管插件 | 无应用级自动回滚；需外层健康检查/旧版重装 | 14,704 stars；周下载 607 万；2026-11-06 活跃；52 open issues；MIT | **选用（桌面后端）** |
 | **Velopack** | 中。跨平台安装/更新，但面向 .NET/C++ | 低。需替换 electron-builder 打包链；不解决插件图 | 有 delta/channels；无插件兼容层 | 2,447 stars；2026-11-06 活跃；40 open issues | 不选 |
-| **Sparkle + WinSparkle** | 低。macOS/Windows 原生 | 低。非 Electron；dsh 没有原生壳 | 成熟 appcast/签名；不管插件 | Sparkle 9,895 stars；WinSparkle 1,485 stars；均活跃 | 不选 |
 | **Google Omaha** | 低。Windows 专用 C++ 更新器 | 低。仅 Windows；已归档 | 成熟但过重；不管插件 | 2,617 stars；**archived** | 不选 |
 | **Tauri updater** | 低。Tauri 应用专用 | 低。dsh 是 Electron，技术栈不匹配 | 签名/渠道；不管插件 | Tauri 112,585 stars；活跃 | 不选 |
 | **self_update / go-update** | 低。Rust/Go 可执行文件自更新 | 低。语言/运行时不符 | 无插件/配置 | self_update 967 stars；活跃 | 不选 |
@@ -190,7 +189,7 @@ import { UpdateOrchestrator, UpdateJournal, Watchdog, PluginGate, NpmBackend } f
 
 **electron-updater**
 
-- 优点：Electron 生态事实标准；周下载 607 万；支持 Windows NSIS、macOS、Linux AppImage/rpm/deb；支持渠道、差量下载、`sha512` 校验、安装交接；dsh Desktop 已有生产级适配层（`apps/desktop/src/update-coordinator.ts`），包括 `autoDownload=false`、手动确认、任务排空、安装失败恢复 Host。
+- 优点：Electron 生态事实标准；周下载 607 万；本项目使用其 Windows NSIS 渠道、差量下载、`sha512` 校验和安装交接；dsh Desktop 已有生产级适配层（`apps/desktop/src/update-coordinator.ts`），包括 `autoDownload=false`、手动确认、任务排空、安装失败恢复 Host。
 - 缺点：没有应用级自动回滚；没有插件概念；不能用于 npm 全局安装或 `npx`。
 - 结论：**只把它当桌面后端，不当全局方案。**
 
@@ -198,12 +197,6 @@ import { UpdateOrchestrator, UpdateJournal, Watchdog, PluginGate, NpmBackend } f
 
 - 优点：Squirrel.Windows 的后继路线，跨平台、delta 更新、安装器体验好。
 - 缺点：.NET/C++ 生态；接入意味着替换 electron-builder 打包链；仍然不管 Cordis 插件图。对 dsh 是「为了更新器重做发布体系」，收益不匹配。
-- 结论：不选。
-
-**Sparkle / WinSparkle**
-
-- 优点：macOS/Windows 原生更新的事实标准，签名和 appcast 成熟。
-- 缺点：需要原生壳；dsh 的壳是 Electron；两套实现无法共享状态机。
 - 结论：不选。
 
 **Google Omaha**
@@ -553,7 +546,7 @@ async function resolvePlan(input: {
 | profile 锁 | `update.lock` 的 PID/心跳 | `E_BUSY`，聚焦现有进度 |
 | Node/OS/Arch | `process.version`、`process.platform`、`process.arch` | `E_UNSUPPORTED` |
 | 包完整性 | npm `dist.integrity` / 桌面 feed `sha512` | `E_INTEGRITY`，丢弃下载 |
-| 签名 | Windows Authenticode / macOS 公证 / 安装器签名 | `E_SIGNATURE`，不执行 |
+| 签名 | Windows Authenticode / 安装器签名 | `E_SIGNATURE`，不执行 |
 | 插件版本范围 | `engines.dsh` 优先；否则 `@deepseek-ai/dsh*` peer；预发布参与匹配 | 硬阻断或禁用 |
 | bundle patch | `dsh.bundle.patch` 存在、YAML 可解析、`name` 可解析 | 硬阻断或禁用 |
 | client 注入 | `dsh.client.inject` 的包在目标核心中存在 | 硬阻断或禁用 |
@@ -1055,7 +1048,7 @@ Harness 可能无法启动。请先备份 $DSH_HOME，然后尝试：
 | 写路由 | 仅 loopback；要求 `{ confirm: true }`；CSRF token；渲染进程不能选择 URL/版本 |
 | 版本来源 | 只接受 npm registry / 官方桌面 feed / 配置的企业镜像；HTTPS；拒绝 URL 中的凭据 |
 | 完整性 | npm `dist.integrity` sha512；桌面 feed sha512；安装器签名 |
-| 签名 | Windows Authenticode；macOS 公证 + hardened runtime；Linux 包签名（如提供） |
+| 签名 | Windows Authenticode；安装器与主程序均须验证 |
 | 防降级 | 正常路径拒绝降级；回滚只允许 journal 中记录的目标版本 |
 | 安装脚本 | 不自动授权 `prepare` / postinstall；遵守 pnpm `allowBuilds`；显示风险 |
 | 权限 | 以当前用户运行；需要管理员时交给安装器，不自行提权 |
@@ -1073,7 +1066,7 @@ Harness 可能无法启动。请先备份 $DSH_HOME，然后尝试：
 | 阶段 | 范围 | 产出 | 退出标准 |
 |---|---|---|---|
 | Phase 0（MVP） | Web/CLI 全局 npm + profile；检查、解析、预检、下载、切换、回滚、按钮状态 | 可用的一键更新；错误码；日志 | 10 个真实插件升级通过；失败注入全部回滚 |
-| Phase 1 | Desktop 统一入口；委托 electron-updater；安装后恢复 | 一个按钮覆盖桌面/Web；桌面菜单复用 | Windows NSIS + macOS 安装/回滚验收 |
+| Phase 1 | Desktop 统一入口；委托 electron-updater；安装后恢复 | 一个按钮覆盖桌面/Web；桌面菜单复用 | Windows NSIS 安装/回滚验收 |
 | Phase 2 | 契约规则库、自动禁用、配置迁移、兼容豁免 | 插件兼容门控 | Top 100 插件兼容矩阵；启动失败自动恢复 |
 | Phase 3 | 灰度、企业镜像、离线包、遥测看板 | 规模化运营 | 灰度可回退；企业离线可用 |
 
@@ -1110,7 +1103,7 @@ export interface UpdateOrchestrator {
 | 维度 | 用例 |
 |---|---|
 | 安装形态 | Desktop / 全局 npm / `npx` / 源码 / SDK |
-| 平台 | Windows x64/arm64、macOS arm64/x64、Linux x64 |
+| 平台 | Windows x64 |
 | 渠道 | stable、nightly、预发布不跨渠道 |
 | 插件 | 兼容、需更新、无兼容、`link:`、native、未声明范围、core 行 |
 | 失败注入 | 网络断开、sha512 错误、磁盘满、权限拒绝、端口占用、进程崩溃、启动超时、插件 import 失败 |
@@ -1192,3 +1185,4 @@ export interface UpdateOrchestrator {
 | 2026-11-09 | 2.0：`0.2.0` 产品化。真实 patch 禁用/staging 门控、watchdog helper、Windows 进程与原子切换、跨平台路径、默认关闭遥测、pnpm/allowBuilds、真实 registry 冒烟、live 原型与发布治理；测试 112 项 |
 | 2026-11-09 | 2.1：`0.2.1`。Node 24.22.2 + 真实 dsh 0.2.2-rc.1 staging 验收通过；冷安装 652 包将默认超时从 3 分钟修正为 10 分钟并开放 `installTimeoutMs`；记录 Windows Desktop EV 签名与启动证据 |
 | 2026-11-09 | 2.2：`0.2.2`。真实失败路径验证通过；staging 错误改为具体命令标签并保留 `UPD-*` 与 stderr 证据；新增回归用例，测试 113 项 |
+| 2026-11-09 | 2.3：`0.2.3`。Windows-only；真实失败插件在 Host 存活时正确判失败并可禁用恢复；独立 watchdog 进程回滚通过；测试 114 项 |

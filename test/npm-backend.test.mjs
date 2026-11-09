@@ -241,6 +241,31 @@ test('npm backend: prepare and activate validate their inputs', async () => {
   await assert.rejects(() => backend.activate({ path: '/tmp/x' }), (error) => error.code === 'UPD-501');
 });
 
+test('npm backend: a Cordis activation warning fails staging even when the Host stays alive', async () => {
+  const { home, profile } = await makeProfile();
+  const bin = join(profile, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js');
+  await mkdir(join(profile, 'node_modules', '@deepseek-ai', 'dsh', 'lib'), { recursive: true });
+  await writeFile(bin, [
+    "const args = process.argv.slice(2);",
+    "if (args.includes('--version')) { console.log('0.2.2-rc.1'); process.exit(0); }",
+    "if (args.includes('--dump-config')) { console.log('profile config'); process.exit(0); }",
+    "console.error('dsh: warning: 1 entry did not activate');",
+    "console.error('broken-plugin: Error: exploded');",
+    'setInterval(() => {}, 1000);',
+  ].join('\n'));
+  const backend = new NpmBackend({ home, fetchImpl: fakeFetch(), stagingReadyMs: 5000 });
+  const health = await backend.stagingHealth(profile, {
+    home,
+    plan: {
+      targetCore: '0.2.2-rc.1',
+      items: [{ name: 'broken-plugin', action: 'update', from: '1.0.0', to: '1.0.1', verify: true }],
+    },
+  });
+  assert.equal(health.ok, false);
+  assert.equal(health.plugin, 'broken-plugin');
+  assert.match(health.evidence.bootLog, /did not activate/);
+});
+
 test('npm backend: staging dump-config failure identifies the command and keeps stderr', async () => {
   const { home, profile } = await makeProfile();
   const bin = join(profile, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js');

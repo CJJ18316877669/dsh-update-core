@@ -131,7 +131,7 @@ export class NpmBackend {
     this.installer = options.installer || ((ctx) => this.runDefaultInstaller(ctx));
     this.healthCheck = options.healthCheck || null;
     this.stagingHealthCheck = options.stagingHealthCheck || null;
-    this.stagingReadyMs = options.stagingReadyMs ?? 3000;
+    this.stagingReadyMs = options.stagingReadyMs ?? 15000;
     this.installTimeoutMs = options.installTimeoutMs ?? 600000;
     this.watchdogPort = options.watchdogPort || null;
     this.watchdogTimeoutMs = options.watchdogTimeoutMs ?? 90000;
@@ -523,7 +523,7 @@ export class NpmBackend {
       evidence.bootLog = evidenceTail(`${boot.stdout}\n${boot.stderr}`);
       const result = {
         ok: boot.ok,
-        reason: boot.ok ? undefined : `staging boot exited with ${boot.code}`,
+        reason: boot.ok ? undefined : (boot.reason || `staging boot exited with ${boot.code}`),
         checks: ['version', 'dump-config', 'boot'],
         evidence,
       };
@@ -560,20 +560,35 @@ export class NpmBackend {
       let stdout = '';
       let stderr = '';
       let settled = false;
-      const finish = async (ok, code) => {
+      const finish = async (ok, code, reason) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
         if (signal) signal.removeEventListener('abort', onAbort);
         if (code === null) await killTree(child, { graceMs: 250 }).catch(() => {});
-        resolve({ ok, code, stdout: evidenceTail(stdout), stderr: evidenceTail(stderr) });
+        resolve({ ok, code, reason, stdout: evidenceTail(stdout), stderr: evidenceTail(stderr) });
       };
       const onAbort = () => {
         void finish(false, null).then(() => reject(new AbortedError()));
       };
-      const timer = setTimeout(() => { void finish(true, null); }, this.stagingReadyMs);
-      child.stdout.on('data', (chunk) => { stdout = evidenceTail(stdout + chunk.toString()); });
-      child.stderr.on('data', (chunk) => { stderr = evidenceTail(stderr + chunk.toString()); });
+      let timer = setTimeout(() => { void finish(true, null); }, this.stagingReadyMs);
+      child.stdout.on('data', (chunk) => {
+        stdout = evidenceTail(stdout + chunk.toString());
+        // dsh web prints this only after the profile has mounted. Keep a short
+        // settle window so plugin activation warnings emitted during mount win.
+        if (!settled && /dsh web: https?:\/\//.test(stdout)) {
+          clearTimeout(timer);
+          timer = setTimeout(() => { void finish(true, null); }, 1000);
+        }
+      });
+      child.stderr.on('data', (chunk) => {
+        stderr = evidenceTail(stderr + chunk.toString());
+        // A failed Cordis plugin does not terminate the Host; it starts without
+        // that entry and reports a warning. Treat that as a failed staging boot.
+        if (/(?:^|\n)\s*dsh: warning:.*did not activate/i.test(stderr)) {
+          void finish(false, null, 'one or more plugins did not activate');
+        }
+      });
       child.once('error', (error) => {
         if (signal) signal.removeEventListener('abort', onAbort);
         clearTimeout(timer);

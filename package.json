@@ -1,6 +1,6 @@
 {
   "name": "dsh-update-core",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": false,
   "type": "module",
   "description": "Transactional DeepSeek Harness updates with plugin compatibility gates, atomic rollback, and crash recovery",
@@ -9,6 +9,9 @@
     "type": "git",
     "url": "git+https://github.com/CJJ18316877669/dsh-update-core.git"
   },
+  "os": [
+    "win32"
+  ],
   "main": "./src/index.mjs",
   "files": [
     "src/",

@@ -53,7 +53,7 @@ killTree(child, {graceMs}) => Promise<void>
 npm test -- --test-name-pattern "npm backend"
 ```
 
-- `windows-latest` 与 `macos-14` 上 `test/npm-backend.test.mjs` 7 项全过
+- `windows-latest` 上 `test/npm-backend.test.mjs` 全部通过
 - 超时用例：安装开始 3 秒后 abort，随后检查系统进程表无该树下残留
 - 取消用例：`AbortController.abort()` 后，staging 目录可立即删除（证明没被占用）
 

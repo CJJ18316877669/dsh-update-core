@@ -14,7 +14,7 @@ const backend = new NpmBackend({
   profileName: 'web',
   timeoutMs: 120000,
   installTimeoutMs: 600000,
-  stagingReadyMs: 5000,
+  stagingReadyMs: 15000,
 });
 
 const [release] = await backend.check('stable');

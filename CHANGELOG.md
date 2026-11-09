@@ -2,6 +2,23 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
+## [0.2.3] - 2026-11-09
+
+### Fixed
+
+- Staging now fails when dsh reports `entry did not activate`, even though the Host process remains alive. Previously a broken plugin could be committed because only process liveness was checked.
+- Wait up to 15 seconds for real dsh startup and settle for one second after the Web UI URL appears, so plugin activation errors are observable on slower Windows hosts.
+- Report `one or more plugins did not activate` instead of the misleading `staging boot exited with null`.
+
+### Changed
+
+- Windows-only product scope: package metadata restricts installation to `win32`, CI runs Windows only, and macOS targets were removed from docs, contracts and acceptance scope.
+
+### Verified
+
+- Real dsh `0.2.2-rc.1` rejects a plugin that throws during `apply`, identifies it as the failed candidate, and starts successfully after `ProfileStore` disables it.
+- A detached watchdog helper process restored a real snapshot, transitioned the journal to `rolled-back`, disarmed itself and exited with code 2.
+
 ## [0.2.2] - 2026-11-09
 
 ### Fixed
@@ -34,7 +51,7 @@ All notable changes are documented here. This project follows Semantic Versionin
 - Official `$DSH_HOME` resolution, lowercase profile-name enforcement, Windows path-length checks and path-root confinement.
 - Local live prototype server over loopback HTTP/SSE with strict Host/Origin/token/JSON checks; `prototype.html` now switches between live and offline modes.
 - Real registry/SRI smoke script, Edge-driven preview capture script, GitHub issue/PR templates, security/privacy/contribution docs and tag release workflow.
-- CI matrix across Ubuntu, Windows, macOS 13/14 and Node.js 20/22/24.
+- CI matrix across Windows and Node.js 20/22/24. (macOS target removed in 0.2.3.)
 
 ### Changed
 

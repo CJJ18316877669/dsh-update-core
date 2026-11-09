@@ -59,7 +59,7 @@ npm run ui
 | P1-3 semver | 完成子集加固 | 前导零、partial comparator、hyphen partial、prerelease；alias 仍不伪装成 semver |
 | P1-4 真实 smoke | 完成 registry / Desktop 待真机 | `npm run smoke:registry` 实际下载并校验 SRI；Electron 签名与安装需真机 |
 | P1-5 清理 | 完成 | staging 7 天；failed/old 7 天；backup 3 份；history 100 条 |
-| P1-6 CI | 已配置，远端待跑 | Ubuntu / Windows / macOS 15 arm64 / macOS 15 Intel × Node 20/22/24；语法 + 全测试；当前网络无法推送，远端未执行 |
+| P1-6 CI | 已运行并修复首轮跨平台问题 | Ubuntu / Windows / macOS 15 arm64 / macOS 15 Intel × Node 20/22/24；首轮暴露测试 glob 与 Windows 盘符假设，已改为平台原生绝对路径和显式文件启动器；最终运行见 Actions |
 | P1-7 锁竞态 | 完成 | 陈旧锁 token 二次确认 + unlink 重试；接管竞态失败返回 UPD-303 |
 
 ### 2.3 跨平台项
@@ -129,7 +129,7 @@ Backend
 
 1. **真实 dsh staging 端到端**：当前开发机 Node 22，registry 的 dsh 0.2.2-rc.1 要求 Node ≥24.9.0。需在 Node 24.9+ 上以真实 profile 跑一次 `--dump-config` 与启动，确认官方 patch 禁用语义和插件错误日志身份提取。
 2. **Windows Desktop / macOS Desktop**：需真实 dsh Desktop 宿主、NSIS/DMG、签名与公证；当前只有适配器注入测试。
-3. **远端 CI**：GitHub 代理返回 502，本地提交未能推送；CI 配置尚未在远端 runner 执行。
+3. **远端 CI**：仓库与 `v0.2.0` 已通过 v2rayN 代理上传。首轮 CI 暴露跨平台测试路径问题，已在 `411df98` 修复；最终 12 矩阵运行结果以 GitHub Actions 页面为准。
 4. **真实 native 构建**：allowBuilds 路径已实现，但未在 node-pty/koffi 等真实包上跑工具链。
 5. **npm 发布**：`0.2.0` 包已具备 exports/LICENSE/repository，但未发布到 npm；需要 owner 的发布凭据与最终批准。
 

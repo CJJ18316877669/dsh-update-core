@@ -31,6 +31,7 @@ All notable changes are documented here. This project follows Semantic Versionin
 - Snapshot restore and profile copy avoid Windows symlink privilege failures by dereferencing.
 - SSE state envelopes and live UI terminal-error presentation.
 - Test runner no longer executes fixture scripts as tests.
+- Cross-platform tests use a Node file-list launcher and platform-native absolute paths, fixing Node 20 and POSIX CI runs.
 
 ## [0.1.0] - 2026-11-08
 

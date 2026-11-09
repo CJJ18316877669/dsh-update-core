@@ -5,7 +5,7 @@
 > 适用：DeepSeek Harness（`dsh`）0.2.x，Cordis「一切皆插件」架构
 > 目标：一个按钮完成 Harness 版本更新，并保证现有插件在新版本上仍可加载；失败可回滚，结果可解释。
 
-**当前状态：`dsh-update-core@0.2.0` 可运行、可测试、可复用。** 112 项自动化测试通过；已覆盖真实 `cordis.patch.yml` 禁用/逐字节恢复、staging 启动门控、原子切换、独立 watchdog、跨平台路径与进程树、默认关闭的遥测上报、真实 registry SRI 冒烟，以及 live 原型。
+**当前状态：`dsh-update-core@0.2.1` 可运行、可测试、可复用。** 112 项自动化测试通过；已覆盖真实 `cordis.patch.yml` 禁用/逐字节恢复、staging 启动门控、原子切换、独立 watchdog、跨平台路径与进程树、默认关闭的遥测上报、真实 registry SRI 冒烟，以及 live 原型。真实 Node 24 + dsh staging 与 Windows Desktop 签名/启动证据见 `docs/REAL_ACCEPTANCE.md`。
 
 ---
 
@@ -1190,3 +1190,4 @@ export interface UpdateOrchestrator {
 | 2026-11-07 | 1.1：原型补齐 17 个状态与部分成功分支；修正自检失败分支图；统一错误码映射与自动检查间隔表述 |
 | 2026-11-08 | 1.2：新增 Node 参考实现（Orchestrator / Journal / watchdog / 门控 / npm 与 electron 适配 / i18n / 遥测）、CLI 与完整测试 |
 | 2026-11-09 | 2.0：`0.2.0` 产品化。真实 patch 禁用/staging 门控、watchdog helper、Windows 进程与原子切换、跨平台路径、默认关闭遥测、pnpm/allowBuilds、真实 registry 冒烟、live 原型与发布治理；测试 112 项 |
+| 2026-11-09 | 2.1：`0.2.1`。Node 24.22.2 + 真实 dsh 0.2.2-rc.1 staging 验收通过；冷安装 652 包将默认超时从 3 分钟修正为 10 分钟并开放 `installTimeoutMs`；记录 Windows Desktop EV 签名与启动证据 |

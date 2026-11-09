@@ -2,6 +2,17 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
+## [0.2.1] - 2026-11-09
+
+### Fixed
+
+- Raise the default staging install timeout from 3 to 10 minutes. A real cold install of `@deepseek-ai/dsh@0.2.2-rc.1` with its 652 dependencies took 4–7 minutes, so the previous default could abort a valid update.
+
+### Added
+
+- Expose `installTimeoutMs` on `NpmBackend`.
+- Add `scripts/acceptance-dsh.mjs` for a real Node 24 + official-registry staging acceptance run and machine-readable evidence.
+
 ## [0.2.0] - 2026-11-09
 
 ### Added

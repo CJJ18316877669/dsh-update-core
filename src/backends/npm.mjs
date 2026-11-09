@@ -104,7 +104,9 @@ export class NpmBackend {
    * @param {{
    *   home:string, profileName?:string, registry?:string, packageName?:string,
    *   channelTags?:Record<string,string>, fetchImpl?:Function, installer?:Function,
-   *   healthCheck?:Function, timeoutMs?:number, clock?:()=>number
+   *   healthCheck?:Function, timeoutMs?:number, installTimeoutMs?:number,
+   *   stagingReadyMs?:number, packageManager?:'npm'|'pnpm', allowBuilds?:string[],
+   *   clock?:()=>number
    * }} options
    */
   constructor(options) {
@@ -130,6 +132,7 @@ export class NpmBackend {
     this.healthCheck = options.healthCheck || null;
     this.stagingHealthCheck = options.stagingHealthCheck || null;
     this.stagingReadyMs = options.stagingReadyMs ?? 3000;
+    this.installTimeoutMs = options.installTimeoutMs ?? 600000;
     this.watchdogPort = options.watchdogPort || null;
     this.watchdogTimeoutMs = options.watchdogTimeoutMs ?? 90000;
     this.backupKeep = options.backupKeep ?? 3;
@@ -412,7 +415,7 @@ export class NpmBackend {
       await this.installer({
         cwd: staging,
         signal: ctx.signal,
-        timeoutMs: 180000,
+        timeoutMs: this.installTimeoutMs,
         packageName: this.packageName,
         version: release.version,
         packageManager: this.packageManager,

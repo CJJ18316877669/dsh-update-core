@@ -1,5 +1,7 @@
 # Dependencies and local installs
 node_modules/
+.tools/
+.acceptance/
 
 # Test and coverage output
 coverage/

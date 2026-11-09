@@ -1,6 +1,6 @@
 {
   "name": "dsh-update-core",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": false,
   "type": "module",
   "description": "Transactional DeepSeek Harness updates with plugin compatibility gates, atomic rollback, and crash recovery",

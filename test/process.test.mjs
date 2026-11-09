@@ -35,8 +35,12 @@ async function startTree(mode) {
   const pending = runCommand(process.execPath, [fixture, pidFile], {
     cwd,
     signal: controller.signal,
-    timeoutMs: mode === 'timeout' ? 150 : 20000,
+    timeoutMs: mode === 'timeout' ? 500 : 20000,
   });
+  // Attach a handler before waiting for the pid file. A slow CI runner may hit
+  // the timeout while this helper is still polling; without this, Node reports
+  // an unhandled rejection before the test receives the promise.
+  pending.catch(() => {});
   assert.equal(await waitFor(async () => {
     try {
       await readFile(pidFile, 'utf8');

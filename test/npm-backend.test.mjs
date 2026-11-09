@@ -240,3 +240,24 @@ test('npm backend: prepare and activate validate their inputs', async () => {
   await assert.rejects(() => backend.prepare(null), TypeError);
   await assert.rejects(() => backend.activate({ path: '/tmp/x' }), (error) => error.code === 'UPD-501');
 });
+
+test('npm backend: staging dump-config failure identifies the command and keeps stderr', async () => {
+  const { home, profile } = await makeProfile();
+  const bin = join(profile, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js');
+  await mkdir(join(profile, 'node_modules', '@deepseek-ai', 'dsh', 'lib'), { recursive: true });
+  await writeFile(bin, [
+    "const args = process.argv.slice(2);",
+    "if (args.includes('--version')) { console.log('0.2.2-rc.1'); process.exit(0); }",
+    "if (args.includes('--dump-config')) { console.error('invalid patch on purpose'); process.exit(1); }",
+    'process.exit(0);',
+  ].join('\n'));
+  const backend = new NpmBackend({ home, fetchImpl: fakeFetch() });
+  const health = await backend.stagingHealth(profile, {
+    home,
+    plan: { targetCore: '0.2.2-rc.1', items: [] },
+  });
+  assert.equal(health.ok, false);
+  assert.equal(health.reason, 'dsh dump-config exited with 1');
+  assert.equal(health.evidence.errorCode, 'UPD-501');
+  assert.match(health.evidence.stderr, /invalid patch on purpose/);
+});

@@ -134,6 +134,7 @@ export async function killTree(child, { graceMs = 1000 } = {}) {
  */
 export async function runCommand(command, args, options) {
   if (options.signal && options.signal.aborted) throw new AbortedError();
+  const label = options.label || 'command';
   const launch = await resolveLaunch(command, args);
   if (options.signal && options.signal.aborted) throw new AbortedError();
 
@@ -180,7 +181,7 @@ export async function runCommand(command, args, options) {
     const onAbort = () => { void terminate(new AbortedError()); };
     const timer = setTimeout(() => {
       void terminate(new UpdateError('UPD-501', {
-        message: `installer timed out after ${options.timeoutMs || 180000}ms`,
+        message: `${label} timed out after ${options.timeoutMs || 180000}ms`,
       }));
     }, options.timeoutMs || 180000);
 
@@ -188,12 +189,12 @@ export async function runCommand(command, args, options) {
     child.stdout.on('data', (chunk) => { stdout = (stdout + chunk.toString()).slice(-8000); });
     child.stderr.on('data', (chunk) => { stderr = (stderr + chunk.toString()).slice(-8000); });
     child.on('error', (error) => {
-      finish(new UpdateError('UPD-501', { message: `installer failed: ${error.message}`, cause: error }));
+      finish(new UpdateError('UPD-501', { message: `${label} failed: ${error.message}`, cause: error }));
     });
     child.on('close', (code) => {
       if (code === 0) finish(null, { stdout, stderr });
       else finish(new UpdateError('UPD-501', {
-        message: `installer exited with ${code}`,
+        message: `${label} exited with ${code}`,
         details: { stderr: stderr.slice(-2000) },
       }));
     });

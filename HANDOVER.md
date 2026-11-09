@@ -1,7 +1,7 @@
 # DeepSeek Harness 一键更新器 · 交接文档
 
 > 更新时间：2026-11-09（UTC+8）
-> 当前版本：`dsh-update-core@0.2.1`；测试 112 项
+> 当前版本：`dsh-update-core@0.2.2`；测试 113 项
 > 仓库：https://github.com/CJJ18316877669/dsh-update-core
 > 项目根目录：`C:\Users\18316\Desktop\DeepSeek-Harness-一键更新方案`
 
@@ -18,7 +18,7 @@ npm run ui
 
 预期：
 
-- 112/112 测试通过。
+- 113/113 测试通过。
 - 真实 registry 冒烟返回 tarball 字节数与 SRI 结果；当前开发机 Node 22 会同时报告 dsh 要求 Node ≥24.9.0 的运行时阻断。
 - success 退出 0，journal `committed`，watchdog 心跳 ≥1。
 - UI 输出 `127.0.0.1` 地址，页面右下角显示 `LIVE`，状态来自真实 orchestrator。
@@ -131,7 +131,7 @@ Backend
 2. **真实 Desktop 升级**：Windows `0.2.2-rc.1` 已安装、EV 签名有效、Host 启动正常，但目标已是当前最新版本，无法复现跨版本更新与重启后的真实 Coordinator 健康检查。macOS 签名、公证与 DMG 安装仍需 macOS 主机。
 3. **远端 CI**：仓库与 `v0.2.0` 已通过 v2rayN 代理上传。首轮 CI 暴露跨平台测试路径问题，已在 `411df98` 修复；最终 12 矩阵运行结果以 GitHub Actions 页面为准。
 4. **真实 native 构建**：allowBuilds 路径已实现，但未在 node-pty/koffi 等真实包上跑工具链。
-5. **npm 发布**：`0.2.1` 名称可用，打包与 `npm publish --dry-run` 通过；本机未登录 npm。Owner 于 2026-11-09 明确选择暂不公开发布，未请求或保存 token。
+5. **npm 发布**：`0.2.2` 名称可用，打包与 `npm publish --dry-run` 通过；本机未登录 npm。Owner 于 2026-11-09 明确选择暂不公开发布，未请求或保存 token。
 
 处理原则：以上失败时宁可阻止更新或安全回滚，不做“看起来成功”的降级。
 

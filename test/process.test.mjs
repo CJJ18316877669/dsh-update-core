@@ -84,8 +84,10 @@ test('process: non-zero exits retain stderr tail and public error code', async (
     runCommand(process.execPath, ['-e', 'process.stderr.write("x".repeat(2100)); process.exit(7)'], {
       cwd: process.cwd(),
       timeoutMs: 5000,
+      label: 'probe command',
     }),
     (error) => error.code === 'UPD-501'
+      && error.message === 'probe command exited with 7'
       && error.details.stderr.length === 2000
       && error.details.stderr === 'x'.repeat(2000),
   );

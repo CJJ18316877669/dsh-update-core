@@ -2,6 +2,14 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
+## [0.2.2] - 2026-11-09
+
+### Fixed
+
+- Staging command failures now name the failing action (`dsh version`, `dsh dump-config`, `installer`, or a rebuild target) instead of reporting every failure as an installer error.
+- Retain the failed command's public error code and stderr tail in staging evidence, making a real invalid `cordis.patch.yml` diagnosable.
+- Add a regression test for a real `--dump-config` failure and a command-label assertion for `runCommand`.
+
 ## [0.2.1] - 2026-11-09
 
 ### Fixed

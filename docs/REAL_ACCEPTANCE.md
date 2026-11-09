@@ -42,6 +42,21 @@ Result: **PASS**
 
 This run revealed that the previous 3-minute install timeout was too short for a cold 652-package install. The default is now 10 minutes and can be overridden with `installTimeoutMs`.
 
+### Real failure path
+
+An intentionally invalid `cordis.patch.yml` was added to the isolated real profile and `stagingHealth()` was invoked again.
+
+```json
+{
+  "ok": false,
+  "reason": "dsh dump-config exited with 1",
+  "errorCode": "UPD-501",
+  "stderr": "YAMLException: unexpected end of the stream within a flow collection"
+}
+```
+
+The gate refused the profile, preserved the error code and stderr evidence, and the invalid patch was removed immediately. The restored profile then passed `--dump-config` again. This exposed and fixed the previous misleading `installer exited with 1` diagnostic.
+
 ## Windows Desktop
 
 | Item | Result |
@@ -65,7 +80,7 @@ The official macOS arm64 DMG is available (`dsh-latest-macos-arm64.dmg`, 268,886
 - Official registry name check: `dsh-update-core` returns HTTP 404, so the unscoped name is available.
 - `npm whoami --registry https://registry.npmjs.org`: `ENEEDAUTH`.
 - No `NODE_AUTH_TOKEN`, `NPM_TOKEN`, or npm auth token in user/global npm configuration.
-- Package contents and `npm publish --dry-run` pass for `0.2.1`.
+- Package contents and `npm publish --dry-run` pass for `0.2.2`.
 - The repository owner reviewed the authorization request on 2026-11-09 and chose **not to publish at this time**. No token was requested or stored.
 
 When publication is approved later, after `npm login --registry https://registry.npmjs.org`, run:

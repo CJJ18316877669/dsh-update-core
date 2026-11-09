@@ -416,6 +416,7 @@ export class NpmBackend {
         cwd: staging,
         signal: ctx.signal,
         timeoutMs: this.installTimeoutMs,
+        label: 'installer',
         packageName: this.packageName,
         version: release.version,
         packageManager: this.packageManager,
@@ -454,11 +455,13 @@ export class NpmBackend {
           cwd: ctx.cwd,
           signal: ctx.signal,
           timeoutMs: 120000,
+          label: `rebuild ${name}`,
         })
         : await runCommand(executable, ['rebuild', name, '--foreground-scripts'], {
           cwd: ctx.cwd,
           signal: ctx.signal,
           timeoutMs: 120000,
+          label: `rebuild ${name}`,
         });
       extra += `${rebuild.stdout}\n${rebuild.stderr}\n`;
     }
@@ -501,6 +504,7 @@ export class NpmBackend {
         cwd: home,
         signal: ctx.signal,
         timeoutMs: Math.min(this.timeoutMs, 30000),
+        label: 'dsh version',
       });
       evidence.version = evidenceTail(`${version.stdout}\n${version.stderr}`);
       const expected = ctx.plan && ctx.plan.targetCore;
@@ -511,6 +515,7 @@ export class NpmBackend {
         cwd: home,
         signal: ctx.signal,
         timeoutMs: Math.min(this.timeoutMs, 30000),
+        label: 'dsh dump-config',
         env: { DSH_HOME: home },
       });
       evidence.dumpConfig = evidenceTail(`${dump.stdout}\n${dump.stderr}`);
@@ -526,6 +531,10 @@ export class NpmBackend {
       if (!boot.ok && candidates.length === 1) result.plugin = candidates[0].name;
       return result;
     } catch (error) {
+      if (error && error.code) evidence.errorCode = error.code;
+      if (error && error.details && error.details.stderr) {
+        evidence.stderr = evidenceTail(error.details.stderr);
+      }
       const result = {
         ok: false,
         reason: error instanceof Error ? error.message : String(error),

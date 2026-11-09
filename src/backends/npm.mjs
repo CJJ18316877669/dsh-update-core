@@ -5,6 +5,8 @@ import { join, resolve, sep } from 'node:path';
 import { UpdateError, AbortedError } from '../errors.mjs';
 import { looksLikeCore } from '../plugin-gate.mjs';
 import { parse } from '../semver.mjs';
+import { runCommand, killTree } from '../platform/process.mjs';
+import { ProfileStore } from '../profile-store.mjs';
 
 /**
  * 校验 npm dist.integrity（SRI，通常是 sha512-<base64>）。
@@ -26,49 +28,6 @@ export function verifyIntegrity(buffer, integrity) {
   return false;
 }
 
-/**
- * @param {string} command
- * @param {string[]} args
- * @param {{cwd:string, signal?:AbortSignal, timeoutMs?:number}} options
- */
-function runCommand(command, args, options) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd: options.cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      shell: false,
-      env: { ...process.env, npm_config_audit: 'false', npm_config_fund: 'false' },
-    });
-    let stderr = '';
-    let stdout = '';
-    const timer = setTimeout(() => {
-      child.kill('SIGTERM');
-      reject(new UpdateError('UPD-501', { message: `installer timed out after ${options.timeoutMs || 180000}ms` }));
-    }, options.timeoutMs || 180000);
-    const onAbort = () => {
-      child.kill('SIGTERM');
-      reject(new AbortedError());
-    };
-    if (options.signal) options.signal.addEventListener('abort', onAbort, { once: true });
-    child.stdout.on('data', (chunk) => { stdout = (stdout + chunk.toString()).slice(-8000); });
-    child.stderr.on('data', (chunk) => { stderr = (stderr + chunk.toString()).slice(-8000); });
-    child.on('error', (error) => {
-      clearTimeout(timer);
-      if (options.signal) options.signal.removeEventListener('abort', onAbort);
-      reject(new UpdateError('UPD-501', { message: `installer failed: ${error.message}`, cause: error }));
-    });
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      if (options.signal) options.signal.removeEventListener('abort', onAbort);
-      if (code === 0) resolve({ stdout, stderr });
-      else reject(new UpdateError('UPD-501', {
-        message: `installer exited with ${code}`,
-        details: { stderr: stderr.slice(-2000) },
-      }));
-    });
-  });
-}
-
 async function exists(path) {
   try {
     await access(path);
@@ -76,6 +35,16 @@ async function exists(path) {
   } catch {
     return false;
   }
+}
+
+function evidenceTail(text, maxLines = 200) {
+  return String(text || '').split(/\r?\n/).slice(-maxLines).join('\n');
+}
+
+async function copyIfPresent(source, target) {
+  if (!(await exists(source))) return false;
+  await cp(source, target, { force: true, dereference: true });
+  return true;
 }
 
 function assertSafeRegistry(registry) {
@@ -120,6 +89,10 @@ export class NpmBackend {
       ctx,
     ));
     this.healthCheck = options.healthCheck || null;
+    this.stagingHealthCheck = options.stagingHealthCheck || null;
+    this.stagingReadyMs = options.stagingReadyMs ?? 3000;
+    this.profileStoreFactory = options.profileStoreFactory
+      || ((profileDir) => new ProfileStore({ profileDir }));
     this.timeoutMs = options.timeoutMs || 20000;
     this.clock = options.clock || Date.now;
     this.profileDir = join(this.home, 'profiles', this.profileName);
@@ -319,7 +292,8 @@ export class NpmBackend {
     if (!release) throw new UpdateError('UPD-103', { message: 'call check() before prepare()' });
     const onProgress = typeof ctx.onProgress === 'function' ? ctx.onProgress : () => {};
     const id = `${this.clock()}-${randomBytes(3).toString('hex')}`;
-    const staging = join(this.stagingRoot, id);
+    const stagingHome = join(this.stagingRoot, id, 'home');
+    const staging = join(stagingHome, 'profiles', this.profileName);
     await mkdir(join(staging, '.artifacts'), { recursive: true });
 
     try {
@@ -334,12 +308,19 @@ export class NpmBackend {
       onProgress({ percent: 60, stage: 'verify' });
 
       const profile = await this.readProfileManifest();
+      for (const file of [
+        'cordis.patch.yml', 'restore.json', 'compatibility.json',
+        'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
+      ]) {
+        await copyIfPresent(join(this.profileDir, file), join(staging, file));
+      }
       const dependencies = { ...(profile.dependencies || {}) };
       dependencies[this.packageName] = release.version;
       for (const item of plan.items || []) {
         if (item.action === 'update' && item.to) dependencies[item.name] = item.to;
       }
       const nextManifest = {
+        ...profile,
         name: profile.name || `dsh-profile-${this.profileName}`,
         private: true,
         dependencies,
@@ -360,12 +341,124 @@ export class NpmBackend {
         packageName: this.packageName,
         version: release.version,
       });
+      await this.applyStagingDecisions({ path: staging, plan });
       onProgress({ percent: 95, stage: 'stage' });
-      return { id, path: staging, plan };
+      return { id, path: staging, home: stagingHome, plan };
     } catch (error) {
       await rm(staging, { recursive: true, force: true }).catch(() => {});
       throw error;
     }
+  }
+
+  /**
+   * 将新的禁用决定写入 staging patch；不触碰正式 profile。
+   * @param {{path:string, plan:Record<string, any>}} staged
+   * @param {Record<string, any>|null} [previousPlan]
+   */
+  async applyStagingDecisions(staged, previousPlan = null) {
+    const previous = new Set((previousPlan?.items || [])
+      .filter((item) => item.action === 'disable').map((item) => item.name));
+    const store = this.profileStoreFactory(staged.path);
+    const handles = [];
+    for (const item of staged.plan.items || []) {
+      if (item.action !== 'disable' || previous.has(item.name)) continue;
+      handles.push(await store.disable(
+        { name: item.name, version: item.from, kind: item.core ? 'core' : 'plugin', protected: item.core },
+        item.reason || 'staging-verify-failed',
+      ));
+    }
+    return handles;
+  }
+
+  /**
+   * staging 的版本、组合配置与短时启动探测。所有命令都使用隔离 DSH_HOME。
+   * @param {string} profilePath
+   * @param {{home?:string, plan?:Record<string, any>, signal?:AbortSignal}} [ctx]
+   */
+  async stagingHealth(profilePath, ctx = {}) {
+    if (this.stagingHealthCheck) return this.stagingHealthCheck(profilePath, ctx);
+    const home = ctx.home || join(profilePath, '..', '..', '..');
+    const bin = join(profilePath, 'node_modules', ...this.packageName.split('/'), 'lib', 'bin.js');
+    const evidence = { version: '', dumpConfig: '', bootLog: '' };
+    try {
+      if (!(await exists(bin))) throw new Error(`dsh launcher missing: ${bin}`);
+      const version = await runCommand(process.execPath, [bin, '--version'], {
+        cwd: home,
+        signal: ctx.signal,
+        timeoutMs: Math.min(this.timeoutMs, 30000),
+      });
+      evidence.version = evidenceTail(`${version.stdout}\n${version.stderr}`);
+      const expected = ctx.plan && ctx.plan.targetCore;
+      if (expected && !version.stdout.includes(expected)) {
+        return { ok: false, reason: `staging version mismatch: expected ${expected}`, checks: ['version'], evidence };
+      }
+      const dump = await runCommand(process.execPath, [bin, '--profile', this.profileName, '--dump-config'], {
+        cwd: home,
+        signal: ctx.signal,
+        timeoutMs: Math.min(this.timeoutMs, 30000),
+        env: { DSH_HOME: home },
+      });
+      evidence.dumpConfig = evidenceTail(`${dump.stdout}\n${dump.stderr}`);
+      const boot = await this.probeStagingBoot(bin, home, ctx.signal);
+      evidence.bootLog = evidenceTail(`${boot.stdout}\n${boot.stderr}`);
+      const result = {
+        ok: boot.ok,
+        reason: boot.ok ? undefined : `staging boot exited with ${boot.code}`,
+        checks: ['version', 'dump-config', 'boot'],
+        evidence,
+      };
+      const candidates = (ctx.plan?.items || []).filter((item) => item.verify);
+      if (!boot.ok && candidates.length === 1) result.plugin = candidates[0].name;
+      return result;
+    } catch (error) {
+      const result = {
+        ok: false,
+        reason: error instanceof Error ? error.message : String(error),
+        checks: ['version', 'dump-config', 'boot'],
+        evidence,
+      };
+      const candidates = (ctx.plan?.items || []).filter((item) => item.verify);
+      if (candidates.length === 1) result.plugin = candidates[0].name;
+      return result;
+    }
+  }
+
+  async probeStagingBoot(bin, home, signal) {
+    return new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [bin, '--profile', this.profileName], {
+        cwd: home,
+        env: { ...process.env, DSH_HOME: home },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: process.platform !== 'win32',
+        windowsHide: true,
+        shell: false,
+      });
+      let stdout = '';
+      let stderr = '';
+      let settled = false;
+      const finish = async (ok, code) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (signal) signal.removeEventListener('abort', onAbort);
+        if (code === null) await killTree(child, { graceMs: 250 }).catch(() => {});
+        resolve({ ok, code, stdout: evidenceTail(stdout), stderr: evidenceTail(stderr) });
+      };
+      const onAbort = () => {
+        void finish(false, null).then(() => reject(new AbortedError()));
+      };
+      const timer = setTimeout(() => { void finish(true, null); }, this.stagingReadyMs);
+      child.stdout.on('data', (chunk) => { stdout = evidenceTail(stdout + chunk.toString()); });
+      child.stderr.on('data', (chunk) => { stderr = evidenceTail(stderr + chunk.toString()); });
+      child.once('error', (error) => {
+        if (signal) signal.removeEventListener('abort', onAbort);
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.once('close', (code) => { void finish(code === 0, code); });
+      if (signal) signal.addEventListener('abort', onAbort, { once: true });
+      if (signal && signal.aborted) onAbort();
+    });
   }
 
   /** @param {Record<string, any>} release @param {AbortSignal} [signal] */
@@ -446,11 +539,11 @@ export class NpmBackend {
     }
     let pluginsOk = true;
     try {
-      JSON.parse(await readFile(join(this.profileDir, 'plugins.json'), 'utf8'));
-      checks.push('plugins:readable');
+      await this.profileStoreFactory(this.profileDir).list();
+      checks.push('plugins:patch-readable');
     } catch {
       pluginsOk = false;
-      checks.push('plugins:missing');
+      checks.push('plugins:patch-invalid');
     }
     return { ok: versionOk && pluginsOk, checks };
   }

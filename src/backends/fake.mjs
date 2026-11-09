@@ -77,6 +77,8 @@ export class FakeBackend {
     this.snapshotPath = options.snapshotPath || null;
     this.calls = [];
     this.stagedPlan = null;
+    this.stagingDecisions = [];
+    this.stagingHealthResult = options.stagingHealth || null;
     this.committed = false;
   }
 
@@ -137,6 +139,24 @@ export class FakeBackend {
 
     onProgress({ percent: 100, stage: 'stage' });
     return { id: 'staged-1', path: this.snapshotPath ? `${this.snapshotPath}.staging` : null, plan };
+  }
+
+  async stagingHealth() {
+    this.calls.push('stagingHealth');
+    if (typeof this.stagingHealthResult === 'function') return this.stagingHealthResult();
+    if (this.stagingHealthResult) return this.stagingHealthResult;
+    return { ok: true, checks: ['version', 'dump-config', 'boot'], evidence: { bootLog: 'fake ready' } };
+  }
+
+  async applyStagingDecisions(staged, previousPlan = null) {
+    this.calls.push('applyStagingDecisions');
+    const previous = new Set((previousPlan?.items || [])
+      .filter((item) => item.action === 'disable').map((item) => item.name));
+    const handles = staged.plan.items
+      .filter((item) => item.action === 'disable' && !previous.has(item.name))
+      .map((item) => ({ name: item.name, version: item.from, reason: item.reason }));
+    this.stagingDecisions.push(...handles);
+    return handles;
   }
 
   async drain(ctx = {}) {

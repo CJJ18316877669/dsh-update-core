@@ -91,6 +91,8 @@ export class UpdateOrchestrator {
     this.i18n = options.i18n || new I18n('zh-CN');
     this.logger = options.logger || { info() {}, warn() {}, error() {} };
     this.clock = options.clock || Date.now;
+    this.stagingVerifier = options.stagingVerifier || null;
+    this.stagingTimeoutMs = options.stagingTimeoutMs ?? 30000;
     this.channel = options.channel || 'stable';
     this.lock = options.lock || (options.home ? new FileLock({ home: options.home }) : null);
     this.home = options.home || '';
@@ -362,6 +364,9 @@ export class UpdateOrchestrator {
         onProgress: (progress) => this.onProgress(progress),
       });
       if (!this.staged) throw new UpdateError('UPD-501', { message: 'backend.prepare returned nothing' });
+      this.stage = 'staging-health';
+      this.setState('verifying', { progress: { percent: 100, stage: 'staging-health' } });
+      await this.verifyStaging(this.staged, journal);
       await this.touchLock();
 
       this.stage = 'draining';
@@ -455,6 +460,136 @@ export class UpdateOrchestrator {
     }
   }
 
+  async runStagingHealth(staged) {
+    if (!this.stagingVerifier && typeof this.backend.stagingHealth !== 'function') {
+      return { ok: true, checks: ['not-required'], evidence: {} };
+    }
+    const controller = new AbortController();
+    const parent = this.abort && this.abort.signal;
+    const onAbort = () => controller.abort();
+    if (parent) parent.addEventListener('abort', onAbort, { once: true });
+    let timer;
+    try {
+      const operation = Promise.resolve().then(() => this.stagingVerifier
+        ? this.stagingVerifier(staged, { signal: controller.signal, plan: this.plan })
+        : this.backend.stagingHealth(staged.path, {
+          ...staged,
+          signal: controller.signal,
+          plan: this.plan,
+        }));
+      const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new UpdateError('UPD-502', {
+            message: `staging verification timed out after ${this.stagingTimeoutMs}ms`,
+          }));
+        }, this.stagingTimeoutMs);
+      });
+      return await Promise.race([operation, timeout]);
+    } finally {
+      clearTimeout(timer);
+      if (parent) parent.removeEventListener('abort', onAbort);
+    }
+  }
+
+  async verifyStaging(staged, journal) {
+    const evidence = [];
+    let gateVerified = false;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      this.throwIfAborted();
+      const health = await this.runStagingHealth(staged);
+      evidence.push({
+        ok: health && health.ok === true,
+        checks: health && health.checks,
+        reason: health && health.reason,
+        plugin: health && (health.plugin || health.name),
+        evidence: health && health.evidence,
+      });
+      await this.journal.transition('prepared', {
+        staging: staged.path || staged.id || null,
+        stagingEvidence: evidence,
+        plan: {
+          updates: this.plan.updates,
+          keeps: this.plan.keeps,
+          disables: this.plan.disables,
+          blocks: this.plan.blocks,
+        },
+      });
+
+      if (health && health.ok === true) {
+        if (!gateVerified && this.plan.items.some((item) => item.verify)) {
+          const previous = this.plan;
+          const next = typeof this.gate.verify === 'function'
+            ? await this.gate.verify(previous)
+            : previous;
+          gateVerified = true;
+          this.plan = next;
+          staged.plan = next;
+          await this.applyStagingPlanChanges(staged, previous, next);
+          if (next.blocks > 0) {
+            throw new UpdateError('UPD-202', {
+              message: 'core plugin failed staging verification',
+              details: { blocks: next.items.filter((item) => item.action === 'block').map((item) => item.name) },
+            });
+          }
+          if (next.disables > previous.disables) continue;
+        }
+        await this.journal.transition('prepared', {
+          plan: {
+            updates: this.plan.updates,
+            keeps: this.plan.keeps,
+            disables: this.plan.disables,
+            blocks: this.plan.blocks,
+          },
+        });
+        return health;
+      }
+
+      const name = health && (health.plugin || health.name);
+      if (!name || typeof this.gate.applyVerificationFailure !== 'function') {
+        throw new UpdateError('UPD-502', {
+          message: 'staging health check failed',
+          details: { reason: health && health.reason, evidence },
+        });
+      }
+      const previous = this.plan;
+      const next = this.gate.applyVerificationFailure(
+        previous,
+        name,
+        health.reason || 'staging-health-failed',
+      );
+      if (next === previous) {
+        throw new UpdateError('UPD-502', {
+          message: `staging failure named an unknown plugin: ${name}`,
+          details: { evidence },
+        });
+      }
+      this.plan = next;
+      staged.plan = next;
+      await this.applyStagingPlanChanges(staged, previous, next);
+      if (next.blocks > 0) {
+        throw new UpdateError('UPD-202', {
+          message: 'core plugin failed staging verification',
+          details: { blocks: next.items.filter((item) => item.action === 'block').map((item) => item.name) },
+        });
+      }
+    }
+    throw new UpdateError('UPD-502', {
+      message: 'staging verification did not converge',
+      details: { evidence },
+    });
+  }
+
+  async applyStagingPlanChanges(staged, previous, next) {
+    if (next.disables <= previous.disables) return;
+    if (typeof this.backend.applyStagingDecisions !== 'function') {
+      throw new UpdateError('UPD-501', {
+        message: 'backend cannot apply staging plugin decisions',
+      });
+    }
+    await this.backend.applyStagingDecisions(staged, previous);
+  }
+
   throwIfAborted() {
     if (this.abort && this.abort.signal.aborted) throw new AbortedError();
   }
@@ -508,6 +643,22 @@ export class UpdateOrchestrator {
       ? await this.journal.read().catch(() => journal)
       : journal;
     const journalState = current ? current.state : null;
+    if (failure.code === 'UPD-202' && journalState === 'prepared') {
+      await this.journal.transition('failed', { error: failure.toJSON() }).catch(() => {});
+      this.stage = 'blocked';
+      this.setState('blocked', {
+        targetVersion: this.release ? this.release.version : this.state.targetVersion,
+        progress: { percent: 0, stage: 'blocked' },
+        error: failure.toJSON(),
+        result: { blocked: true, reason: 'staging-verify-failed' },
+      });
+      this.telemetry.emit('update.blocked', {
+        fromVersion: current.from,
+        toVersion: current.to,
+        blockCount: this.plan.blocks,
+      });
+      return;
+    }
     const rollbackNeeded = !!this.activation
       || (journalState && ['applying', 'verifying', 'rolling-back'].includes(journalState));
 

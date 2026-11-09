@@ -123,10 +123,12 @@ export class UpdateJournal {
     if (!JOURNAL_STATES.includes(next)) {
       throw new Error(`invalid journal state: ${next}`);
     }
-    if (next === current.state) {
+    if (next === current.state && Object.keys(patch).length === 0) {
       return current;
     }
-    const allowed = ALLOWED_TRANSITIONS[current.state] || [];
+    const allowed = next === current.state
+      ? [next]
+      : (ALLOWED_TRANSITIONS[current.state] || []);
     if (!allowed.includes(next)) {
       throw new Error(`invalid journal transition: ${current.state} -> ${next}`);
     }

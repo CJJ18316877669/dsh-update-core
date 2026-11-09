@@ -1,0 +1,10 @@
+# 用户插件配置：请保留中文注释
+- id: plugin-alpha
+  config:
+    greeting: "你好"
+
+# 下面使用四空格缩进
+- id: "plugin-beta"
+    config:
+      enabled: true
+- { id: plugin-flow, config: { mode: safe } }

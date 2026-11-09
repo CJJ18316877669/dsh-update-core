@@ -62,9 +62,14 @@ function fetchImpl(url) {
 async function installer({ cwd }) {
   const dshDir = join(cwd, 'node_modules', '@deepseek-ai', 'dsh');
   const pluginDir = join(cwd, 'node_modules', 'dsh-plugin-a');
-  await mkdir(dshDir, { recursive: true });
+  await mkdir(join(dshDir, 'lib'), { recursive: true });
   await mkdir(pluginDir, { recursive: true });
   await writeFile(join(dshDir, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', version: '0.2.3' }));
+  await writeFile(join(dshDir, 'lib', 'bin.js'), `#!/usr/bin/env node
+if (process.argv.includes('--version')) console.log('0.2.3');
+else if (process.argv.includes('--dump-config')) console.log('- id: dsh-plugin-a');
+else setInterval(() => {}, 1000);
+`);
   await writeFile(join(pluginDir, 'package.json'), JSON.stringify({
     name: 'dsh-plugin-a', version: '1.1.0', engines: { dsh: '>=0.2.0' },
   }));
@@ -72,7 +77,7 @@ async function installer({ cwd }) {
 
 test('integration: npm backend + orchestrator update and manual rollback', async () => {
   const { home, dir } = await profile();
-  const backend = new NpmBackend({ home, fetchImpl, installer });
+  const backend = new NpmBackend({ home, fetchImpl, installer, stagingReadyMs: 50 });
   const journal = new UpdateJournal({ home });
   const watchdog = new Watchdog({ home });
   const orchestrator = new UpdateOrchestrator({

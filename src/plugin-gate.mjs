@@ -256,6 +256,29 @@ export class PluginGate {
   }
 
   /**
+   * 将 staging 启动日志明确点名的失败回填到处置计划。
+   * 只改变目标项；没有明确身份时保持原计划，由调用方安全失败。
+   * @param {ReturnType<PluginGate['plan']>} plan
+   * @param {string} name
+   * @param {string} reason
+   */
+  applyVerificationFailure(plan, name, reason) {
+    if (!plan || !Array.isArray(plan.items) || typeof name !== 'string' || !name) return plan;
+    let matched = false;
+    const items = plan.items.map((item) => {
+      if (item.name !== name) return item;
+      matched = true;
+      return {
+        ...item,
+        action: item.core ? 'block' : 'disable',
+        verify: false,
+        reason: `staging-verify-failed:${reason || 'unknown'}`,
+      };
+    });
+    return matched ? summarize(plan.targetCore, items) : plan;
+  }
+
+  /**
    * @param {Record<string, any>} plugin
    * @param {string} reason
    */

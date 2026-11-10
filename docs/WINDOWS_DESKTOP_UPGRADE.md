@@ -30,14 +30,8 @@ The old application used its real `electron-updater` path:
 --updated /S --force-run
 ```
 
-8. Installation was blocked by the current agent host's security policy:
-
-```text
-PROGRAM BLOCKED BY SECURITY POLICY
-reg.exe (C:\Windows\system32\reg.exe) is on the Program Blacklist
-```
-
-This block is external to the application and cannot be approved or bypassed from the current command. The installer therefore did not complete its automatic restart.
+8. The first handoff was blocked by the agent host's `reg.exe` program blacklist. After the owner removed that entry, the pending installer ran and replaced the registered `C:\DeepSeek Harness` application with `0.2.2.0`.
+9. The silent installer's `--force-run` automatic relaunch was not observed in the non-interactive managed session; fresh silent installs also required UAC. This is the only unverified part of the installer handoff.
 
 ## Post-download upgrade verification
 
@@ -55,4 +49,4 @@ Because the pending installer had already been signature-verified, the same veri
 
 ## Conclusion
 
-The real Windows Desktop update path is verified through **check, download, signature verification, and installer handoff**. The official installer’s final `reg.exe` operations and automatic relaunch are not verified because the agent host blocks `reg.exe`. The verified `0.2.2` application payload starts successfully with the same data and a healthy Host, so the remaining gap is isolated to the installer handoff/relaunch environment, not the dsh updater core.
+The real Windows Desktop update path is verified through **check, download, signature verification, installer execution, and version replacement**. The silent installer's automatic relaunch was not observed in the non-interactive agent session, so that single observation remains unverified. The installed `0.2.2` application starts successfully with a healthy Host and the coordinator idle; the gap is isolated to the unattended installer relaunch environment.

@@ -92,7 +92,7 @@ The official previous installer `deepseek-harness-0.2.1-rc.5-win-x64.exe` and cu
 | Launch | Electron main, GPU, network, renderer and Host processes stable |
 | Host health | Process responding; Host loaded `profiles/desktop` from the installed runtime |
 
-The installed application already equals the latest fixed download. Windows-only scope is enforced in package metadata and CI. The real `0.2.1-rc.5 → 0.2.2-rc.1` update was exercised through check, download, signature verification and installer handoff; see [`WINDOWS_DESKTOP_UPGRADE.md`](WINDOWS_DESKTOP_UPGRADE.md). The official installer's final `reg.exe` step was blocked by the agent host's program blacklist, so automatic installer restart is not claimed. The signed `0.2.2` payload was started against the same isolated data and reached a healthy Host with the coordinator idle.
+The installed application already equals the latest fixed download. Windows-only scope is enforced in package metadata and CI. The real `0.2.1-rc.5 → 0.2.2-rc.1` update was exercised through check, download, signature verification, installer execution and version replacement; see [`WINDOWS_DESKTOP_UPGRADE.md`](WINDOWS_DESKTOP_UPGRADE.md). The silent installer's automatic relaunch was not observed in the non-interactive session. The installed `0.2.2` payload reached a healthy Host with the coordinator idle.
 
 ## npm publication
 
@@ -110,6 +110,6 @@ npm publish --access public --registry https://registry.npmjs.org
 
 ## Remaining external work
 
-1. Installer-managed automatic restart for the Windows Desktop upgrade, blocked only by the host security policy's `reg.exe` blacklist.
+1. Observation of the silent installer's automatic relaunch in an unattended session.
 2. Prototype whole-page locale switching for all eight UI languages.
 3. npm account authorization and final registry publication.

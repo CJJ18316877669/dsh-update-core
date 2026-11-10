@@ -128,7 +128,7 @@ Backend
 以下不是代码内可替代的验收，不能标记为“真机通过”：
 
 1. **真实 dsh staging**：已在 Node 24.22.2 与真实 dsh 0.2.2-rc.1 上通过 version、dump-config 和启动探测；证据见 `docs/REAL_ACCEPTANCE.md`。
-2. **真实 Desktop 升级**：`0.2.1-rc.5 → 0.2.2-rc.1` 的检查、下载、签名校验和安装器交接已实测；安装器最终 `reg.exe` 步骤被宿主程序黑名单阻断。验签后的新版应用在同目录启动，数据保留且 Host 健康。证据见 `docs/WINDOWS_DESKTOP_UPGRADE.md`。
+2. **真实 Desktop 升级**：`0.2.1-rc.5 → 0.2.2-rc.1` 的检查、下载、签名校验、安装器执行与版本替换已实测。静默安装器的 `--force-run` 自动重启在非交互会话中未观察到；新版应用手动启动后 Host 健康、Coordinator 空闲。证据见 `docs/WINDOWS_DESKTOP_UPGRADE.md`。
 3. **远端 CI**：仓库与 `v0.2.0` 已通过 v2rayN 代理上传。首轮 CI 暴露跨平台测试路径问题，已在 `411df98` 修复；最终 12 矩阵运行结果以 GitHub Actions 页面为准。
 4. **真实 native 构建**：allowBuilds 路径已实现，但未在 node-pty/koffi 等真实包上跑工具链。
 5. **npm 发布**：`0.2.4` 打包与 `npm publish --dry-run` 通过；本机未登录 npm。Owner 明确选择暂不公开发布，不请求或保存 token。

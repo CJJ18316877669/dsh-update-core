@@ -57,6 +57,8 @@ An intentionally invalid `cordis.patch.yml` was added to the isolated real profi
 
 The gate refused the profile, preserved the error code and stderr evidence, and the invalid patch was removed immediately. The restored profile then passed `--dump-config` again. This exposed and fixed the previous misleading `installer exited with 1` diagnostic.
 
+A post-fix `stagingHealth()` run on the restored real profile returned `ok: true`; the boot log contained no `opening the default browser` line after staging moved to `--port 0 --no-open`.
+
 ### Real failed plugin
 
 A local `dsh-plugin-crash` was installed into the isolated profile and inserted through a real profile patch. Its Cordis `apply()` threw during boot. The Host stayed alive and printed:
@@ -97,7 +99,7 @@ The installed application already equals the latest fixed download. Windows-only
 - Official registry name check: `dsh-update-core` returns HTTP 404, so the unscoped name is available.
 - `npm whoami --registry https://registry.npmjs.org`: `ENEEDAUTH`.
 - No `NODE_AUTH_TOKEN`, `NPM_TOKEN`, or npm auth token in user/global npm configuration.
-- Package contents and `npm publish --dry-run` pass for `0.2.2`.
+- Package contents and `npm publish --dry-run` pass for `0.2.4`.
 - The repository owner reviewed the authorization request on 2026-11-09 and chose **not to publish at this time**. No token was requested or stored.
 
 When publication is approved later, after `npm login --registry https://registry.npmjs.org`, run:

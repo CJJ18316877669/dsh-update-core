@@ -19,6 +19,9 @@ cd dsh-update-core
 & 'C:\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add "file:$PWD\plugin"
 ```
 
+> 更新插件自身代码后，pnpm 可能复用同版本的 `file:` 目录而漏掉新增文件。先删除
+> `%USERPROFILE%\.dsh\profiles\desktop\node_modules\dsh-update-core-plugin`，再执行上面的 `add` 命令。
+
 完全退出并重新打开 DeepSeek Harness，进入：
 
 ```text

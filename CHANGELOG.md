@@ -2,14 +2,17 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
-## [0.3.1] - 2026-11-10
+## [0.3.2] - 2026-11-10
 
 ### Added
 
 - Transactional core rollback: pre-downloads the currently installed official installer, verifies its signature, and restores the previous profile manifest on failure.
 - Manual “rollback previous version” action and `/api/rollback`.
 - Scheduled status checks (`autoCheckHours`, default 6) with last-check metadata.
+- Optional scheduled auto-apply (`autoApply`, default off).
 - Per-plugin exact-version ignore/clear (`/api/ignore`).
+- GitHub API ETag + persistent disk cache and token support to avoid rate-limit failures.
+- `npm run plugin:install` force-refreshes a stale `file:` plugin directory.
 - Update history UI and `/api/history` (last 30 runs).
 - GitHub release/tag resolution for `git+https`, `github:` and `owner/repo` dependencies.
 - Repository consistency guard for registry and GitHub updates (`repository-mismatch`).

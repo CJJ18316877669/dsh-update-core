@@ -109,6 +109,7 @@
     $('rollback').disabled = !(data.coreState && (data.coreState.rollbackInstaller || data.coreState.rollbackPackage));
     $('meta').textContent = '上次检查 ' + (data.checkedAt ? new Date(data.checkedAt).toLocaleString() : '—') +
       ' · 自动检查每 ' + (data.autoCheckHours || 0) + ' 小时' +
+      ' · 自动安装' + (data.autoApply ? '已开启' : '关闭') +
       (data.coreState && data.coreState.rollbackInstaller
         ? ' · 可回滚核心 ' + data.coreState.currentBefore
         : (data.coreState ? ' · 可回滚插件' : ''));

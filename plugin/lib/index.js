@@ -111,6 +111,8 @@ export function mountRoutes(webServer, config = {}) {
       targetCore,
       registry: config.registry || process.env.DSH_UPDATE_REGISTRY || undefined,
       ignored,
+      githubToken: config.githubToken,
+      cacheFile: join(updatesDir, 'github-cache.json'),
     });
     const [history, coreState, heartbeat] = await Promise.all([
       listHistory(paths, 12),
@@ -128,6 +130,7 @@ export function mountRoutes(webServer, config = {}) {
       coreState,
       heartbeat,
       autoCheckHours: Number(config.autoCheckHours ?? 6),
+      autoApply: config.autoApply === true,
       checkedAt: new Date().toISOString(),
       updateAvailable: core.update || plan.updates > 0,
       running,
@@ -333,10 +336,16 @@ export function mountRoutes(webServer, config = {}) {
   ];
 
   const hours = Number(config.autoCheckHours ?? 6);
+  const tick = async () => {
+    const snapshot = await status(true);
+    if (config.autoApply === true && snapshot.updateAvailable && !running) {
+      await startUpdate();
+    }
+  };
   if (Number.isFinite(hours) && hours > 0) {
-    const delay = setTimeout(() => { status(true).catch(() => {}); }, 15_000);
+    const delay = setTimeout(() => { tick().catch(() => {}); }, 15_000);
     delay.unref?.();
-    timer = setInterval(() => { status(true).catch(() => {}); }, Math.max(1, hours) * 3_600_000);
+    timer = setInterval(() => { tick().catch(() => {}); }, Math.max(1, hours) * 3_600_000);
     timer.unref?.();
   }
 
@@ -350,7 +359,7 @@ export async function apply(ctx, config = {}) {
   const paths = defaultPaths(config);
   await writeHeartbeat(paths, {
     pid: process.pid,
-    version: '0.2.0',
+    version: '0.2.1',
     state: 'loaded',
   }).catch(() => {});
   ctx.inject(['webServer'], (host) => {

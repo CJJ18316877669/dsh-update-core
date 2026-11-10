@@ -1,6 +1,6 @@
 {
   "name": "dsh-update-core-plugin",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "One-click Desktop update for DeepSeek Harness with compatible plugin selection",

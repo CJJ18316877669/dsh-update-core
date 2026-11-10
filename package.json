@@ -1,6 +1,6 @@
 {
   "name": "dsh-update-core",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": false,
   "type": "module",
   "description": "Transactional DeepSeek Harness updates with plugin compatibility gates, atomic rollback, and crash recovery",
@@ -47,6 +47,7 @@
     "ui": "node src/cli.mjs ui",
     "status": "node src/cli.mjs status",
     "smoke:registry": "node scripts/smoke-registry.mjs",
-    "previews": "node scripts/capture-previews.mjs"
+    "previews": "node scripts/capture-previews.mjs",
+    "plugin:install": "node scripts/install-plugin.mjs"
   }
 }

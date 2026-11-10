@@ -1,8 +1,8 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { compare, parse, parseRange, satisfies } from './vendor/semver.mjs';
 
 const CORE_PREFIX = '@deepseek-ai/dsh';
@@ -275,22 +275,62 @@ export function createPluginPlan(dependencies, installedManifests, available, ta
 
 const githubCache = new Map();
 
-export async function resolveGithubVersions(repo, expectedName, token = process.env.DSH_GITHUB_TOKEN || process.env.GITHUB_TOKEN) {
+async function readGithubCache(file) {
+  if (!file) return { schema: 1, repos: {} };
+  try {
+    const data = JSON.parse(await readFile(file, 'utf8'));
+    return data && data.schema === 1 && data.repos && typeof data.repos === 'object'
+      ? data
+      : { schema: 1, repos: {} };
+  } catch {
+    return { schema: 1, repos: {} };
+  }
+}
+
+async function writeGithubCache(file, data) {
+  if (!file) return;
+  try {
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+  } catch { /* cache is best-effort */ }
+}
+
+export async function resolveGithubVersions(repo, expectedName, token, cacheFile) {
   if (!repo) return { versions: [] };
+  token ||= process.env.DSH_GITHUB_TOKEN || process.env.GITHUB_TOKEN;
+  const disk = await readGithubCache(cacheFile);
+  const stored = disk.repos[repo];
   const cached = githubCache.get(repo);
   if (cached && Date.now() - cached.at < 5 * 60_000) return cached.value;
+  if (!cached && stored && Date.now() - Date.parse(stored.at || '') < 5 * 60_000) {
+    githubCache.set(repo, { at: Date.now(), value: stored.value });
+    return stored.value;
+  }
+  const fallback = cached?.value || stored?.value || null;
   const headers = {
     accept: 'application/vnd.github+json',
-    'user-agent': 'dsh-update-core-plugin/0.1.0',
+    'user-agent': 'dsh-update-core-plugin/0.2.1',
     'x-github-api-version': '2022-11-28',
+    ...(stored?.etag ? { 'if-none-match': stored.etag } : {}),
     ...(token ? { authorization: `Bearer ${token}` } : {}),
   };
   let refs = [];
+  let etag = stored?.etag || null;
   try {
     const response = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=30`, {
       headers, signal: AbortSignal.timeout(20000),
     });
+    if (response.status === 304 && fallback) {
+      githubCache.set(repo, { at: Date.now(), value: fallback });
+      return fallback;
+    }
+    if (response.status === 403 && fallback) {
+      // Rate limited: keep using the last verified catalog.
+      githubCache.set(repo, { at: Date.now(), value: fallback });
+      return fallback;
+    }
     if (response.ok) {
+      etag = response.headers.get('etag') || etag;
       const releases = await response.json();
       refs = releases
         .filter((release) => !release.draft && !release.prerelease)
@@ -315,7 +355,7 @@ export async function resolveGithubVersions(repo, expectedName, token = process.
   for (const entry of refs.slice(0, 12)) {
     try {
       const raw = await fetch(`https://raw.githubusercontent.com/${repo}/${encodeURIComponent(entry.ref)}/package.json`, {
-        signal: AbortSignal.timeout(15000), headers: { 'user-agent': 'dsh-update-core-plugin/0.1.0' },
+        signal: AbortSignal.timeout(15000), headers: { 'user-agent': 'dsh-update-core-plugin/0.2.1' },
       });
       if (!raw.ok) continue;
       const manifest = await raw.json();
@@ -325,10 +365,14 @@ export async function resolveGithubVersions(repo, expectedName, token = process.
   }
   const value = { versions };
   githubCache.set(repo, { at: Date.now(), value });
+  await writeGithubCache(cacheFile, {
+    schema: 1,
+    repos: { ...disk.repos, [repo]: { at: new Date().toISOString(), etag, value } },
+  });
   return value;
 }
 
-export async function buildPlan({ profileDir, targetCore, registry, ignored = new Map() }) {
+export async function buildPlan({ profileDir, targetCore, registry, ignored = new Map(), githubToken, cacheFile }) {
   const effectiveRegistry = registry || await configuredRegistry(profileDir);
   const profile = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8'));
   const dependencies = profile.dependencies && typeof profile.dependencies === 'object' ? profile.dependencies : {};
@@ -345,10 +389,11 @@ export async function buildPlan({ profileDir, targetCore, registry, ignored = ne
   const externalNames = plugins.filter((name) => /^(?:git|github:|https?:)/.test(dependencies[name]));
   const available = await resolvePluginVersions(pluginNames, effectiveRegistry);
   const github = new Map();
+  const effectiveCache = cacheFile || join(dirname(dirname(profileDir)), 'updates', 'dsh-update-plugin', 'github-cache.json');
   await Promise.all(externalNames.map(async (name) => {
     const repo = repositoryOf(manifests.get(name)) || githubRepoFromSpec(dependencies[name]);
     if (!repo) return;
-    github.set(name, await resolveGithubVersions(repo, name));
+    github.set(name, await resolveGithubVersions(repo, name, githubToken, effectiveCache));
   }));
   return createPluginPlan(dependencies, manifests, available, targetCore, bundles, { ignored, github });
 }

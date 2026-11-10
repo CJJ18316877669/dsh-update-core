@@ -5,7 +5,7 @@
 > 适用：DeepSeek Harness（`dsh`）0.2.x，Cordis「一切皆插件」架构
 > 目标：一个按钮完成 Harness 版本更新，并保证现有插件在新版本上仍可加载；失败可回滚，结果可解释。
 
-**当前状态：`dsh-update-core@0.3.1` 可运行、可测试、可复用，仅支持 Windows。** 123 项自动化测试通过；已提供 Desktop 设置页 DSH 插件，可一键更新核心与兼容插件；已覆盖真实 `cordis.patch.yml` 禁用/逐字节恢复、staging 启动门控、原子切换、独立 watchdog、跨平台路径与进程树、默认关闭的遥测上报、真实 registry SRI 冒烟，以及 live 原型。真实 Node 24 + dsh staging 与 Windows Desktop 签名/启动证据见 `docs/REAL_ACCEPTANCE.md`。
+**当前状态：`dsh-update-core@0.3.2` 可运行、可测试、可复用，仅支持 Windows。** 123 项自动化测试通过；已提供 Desktop 设置页 DSH 插件，可一键更新核心与兼容插件；已覆盖真实 `cordis.patch.yml` 禁用/逐字节恢复、staging 启动门控、原子切换、独立 watchdog、跨平台路径与进程树、默认关闭的遥测上报、真实 registry SRI 冒烟，以及 live 原型。真实 Node 24 + dsh staging 与 Windows Desktop 签名/启动证据见 `docs/REAL_ACCEPTANCE.md`。
 
 ---
 
@@ -39,6 +39,26 @@ cd dsh-update-core
 - 展示最近 30 次更新历史，包括核心版本、插件数量和回滚结果。
 
 点击“一键更新并重启”后，插件会启动外部 helper：关闭 Desktop、下载并校验官方安装包（核心有新版时）、按计划更新 profile 插件、启动新版本并等待插件心跳确认健康。核心更新前还会预先下载当前版本的官方安装包，并备份 profile 清单与锁文件，用于失败自动回滚和手动“回滚上一版本”。
+
+可选配置写在 `~/.dsh/profiles/desktop/cordis.patch.yml` 中：
+
+```yaml
+- id: dsh-update-core-plugin
+  config:
+    autoCheckHours: 6       # 0 关闭定时检查
+    autoApply: false         # true 时检查到更新会自动关闭并更新，默认关闭
+    githubToken: ''          # 也可用 DSH_GITHUB_TOKEN / GITHUB_TOKEN 环境变量
+```
+
+`autoApply: true` 会在后台检查到更新后直接执行“一键更新”，仍会关闭并重启 Desktop，建议只在你明确接受自动重启时开启。
+
+更新插件自身后，强制刷新 `file:` 依赖：
+
+```powershell
+npm run plugin:install
+```
+
+该脚本会先删除旧的 `node_modules/dsh-update-core-plugin`，再重新执行 `dsh plugin add`，避免 pnpm 复用旧目录。
 
 更新前备份位于：
 

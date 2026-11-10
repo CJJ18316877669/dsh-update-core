@@ -1,0 +1,30 @@
+{
+  "name": "dsh-update-core-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "One-click Desktop update for DeepSeek Harness with compatible plugin selection",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./client/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots"
+      ],
+      "platform": "web"
+    }
+  },
+  "files": [
+    "lib",
+    "client",
+    "public",
+    "cordis.patch.yml"
+  ]
+}

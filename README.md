@@ -5,16 +5,46 @@
 > 适用：DeepSeek Harness（`dsh`）0.2.x，Cordis「一切皆插件」架构
 > 目标：一个按钮完成 Harness 版本更新，并保证现有插件在新版本上仍可加载；失败可回滚，结果可解释。
 
-**当前状态：`dsh-update-core@0.2.4` 可运行、可测试、可复用，仅支持 Windows。** 114 项自动化测试通过；已覆盖真实 `cordis.patch.yml` 禁用/逐字节恢复、staging 启动门控、原子切换、独立 watchdog、跨平台路径与进程树、默认关闭的遥测上报、真实 registry SRI 冒烟，以及 live 原型。真实 Node 24 + dsh staging 与 Windows Desktop 签名/启动证据见 `docs/REAL_ACCEPTANCE.md`。
+**当前状态：`dsh-update-core@0.3.0` 可运行、可测试、可复用，仅支持 Windows。** 117 项自动化测试通过；已提供 Desktop 设置页 DSH 插件，可一键更新核心与兼容插件；已覆盖真实 `cordis.patch.yml` 禁用/逐字节恢复、staging 启动门控、原子切换、独立 watchdog、跨平台路径与进程树、默认关闭的遥测上报、真实 registry SRI 冒烟，以及 live 原型。真实 Node 24 + dsh staging 与 Windows Desktop 签名/启动证据见 `docs/REAL_ACCEPTANCE.md`。
 
 ---
+
+## DSH 插件：Desktop 一键更新
+
+从 GitHub 下载/克隆本仓库后，把 `plugin/` 安装到 Desktop profile：
+
+```powershell
+git clone https://github.com/CJJ18316877669/dsh-update-core.git
+cd dsh-update-core
+& 'C:\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add "file:$PWD\plugin"
+```
+
+完全退出并重新打开 DeepSeek Harness，进入：
+
+```text
+设置 → 一键更新
+```
+
+页面会显示当前核心、官方最新核心，以及每个插件的处置：
+
+- 有兼容新核心的更高版本：更新；
+- 最新版本不兼容目标核心：保持当前版本，不删除、不禁用；
+- git/file/链接依赖：保持不动。
+
+点击“一键更新并重启”后，插件会启动外部 helper：关闭 Desktop、下载并校验官方安装包（核心有新版时）、按计划更新 profile 插件、重新启动 Desktop。更新前会备份 `package.json` 和锁文件到：
+
+```text
+~/.dsh/updates/dsh-update-plugin/<run>/
+```
+
+要求 Windows x64，Desktop 已安装到 `C:\DeepSeek Harness`（或可通过 `DSH_DESKTOP_EXE` 指定）。更新期间会关闭当前 Desktop，未保存的会话可能中断；安装器需要 UAC 时会弹出系统确认。
 
 ## 快速开始
 
 要求 Node.js ≥ 20；真实 dsh 当前 release 自身要求 Node.js ≥ 24.9.0，更新器会在下载前按目标包的 `engines.node` 拒绝不满足的宿主。
 
 ```bash
-npm test                         # 114 项，零依赖
+npm test                         # 117 项，零依赖
 npm run ui                       # live 原型，默认仅监听 127.0.0.1 的随机端口
 npm run smoke:registry           # 真实 registry + tarball SRI 冒烟
 node src/cli.mjs demo --scenario success --fast
@@ -31,7 +61,7 @@ node src/cli.mjs status --home <dir>
 | `README.md` | 设计事实源、调研、状态机、流程、兼容、回滚与当前实现边界 |
 | `HANDOVER.md` | 当前实现状态、验收命令、剩余外部风险和交接说明 |
 | `src/` | 零依赖 ESM 实现：编排、Journal、watchdog、ProfileStore、门控、后端、路径/进程/文件系统、i18n、遥测、live server |
-| `test/` | 114 项单元、集成、CLI 契约、故障注入与安全边界用例 |
+| `test/` | 117 项单元、集成、CLI 契约、故障注入与安全边界用例 |
 | `prototype.html` / `preview*.png` | live/离线双模式原型与 6 张由真实页面重拍的 1080×1100 截图 |
 | `scripts/` | 真实 registry 冒烟与 Edge DevTools 截图脚本 |
 | `LICENSE` / `CHANGELOG.md` / `SECURITY.md` / `PRIVACY.md` | MIT 许可、版本记录、安全与隐私说明 |

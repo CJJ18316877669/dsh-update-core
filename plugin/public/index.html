@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeepSeek Harness 一键更新</title>
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { margin: 0; padding: 20px; background: var(--bg, #f6f7f9); color: var(--fg, #1f2328); }
+  .card { max-width: 900px; margin: 0 auto 16px; background: var(--card, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 12px; padding: 18px 20px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  p { margin: 6px 0; color: var(--muted, #6b7280); }
+  .versions { display: flex; gap: 28px; margin: 14px 0; }
+  .versions div { display: flex; flex-direction: column; gap: 4px; }
+  .versions b { font-size: 18px; }
+  button { border: 0; border-radius: 8px; padding: 9px 16px; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  #check { background: #eef0f3; color: inherit; }
+  #update { background: #2563eb; color: #fff; }
+  #update:disabled { background: #94a3b8; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #dcfce7; color: #166534; }
+  .badge.warn { background: #fef3c7; color: #92400e; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid var(--border, #eee); }
+  td:last-child { text-align: right; white-space: nowrap; }
+  .tag { font-size: 12px; padding: 2px 7px; border-radius: 999px; background: #eef0f3; }
+  .tag.update { background: #dbeafe; color: #1d4ed8; }
+  .tag.keep { background: #f1f5f9; color: #475569; }
+  pre { white-space: pre-wrap; font-size: 12px; background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 8px; max-height: 220px; overflow: auto; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>DeepSeek Harness 一键更新</h1>
+  <p>更新官方 Desktop 核心，并把 profile 中的插件升级到与新核心兼容的最高版本。没有兼容版本的插件保持原样，不删除、不主动禁用。</p>
+  <div class="versions">
+    <div><span>当前核心</span><b id="current">—</b></div>
+    <div><span>最新核心</span><b id="latest">—</b></div>
+    <div><span>插件</span><b id="pluginSummary">—</b></div>
+  </div>
+  <div class="row">
+    <button id="check">重新检查</button>
+    <button id="update" disabled>一键更新并重启</button>
+    <span id="state"></span>
+  </div>
+</div>
+<div class="card">
+  <h1 style="font-size:16px">插件计划</h1>
+  <table>
+    <thead><tr><th>插件</th><th>当前</th><th>目标</th><th>处置</th></tr></thead>
+    <tbody id="plugins"><tr><td colspan="4">正在读取…</td></tr></tbody>
+  </table>
+</div>
+<div class="card" id="progressCard" hidden>
+  <h1 style="font-size:16px">更新进度</h1>
+  <pre id="progress"></pre>
+</div>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  let snapshot = null;
+  let runId = null;
+  let poll = null;
+
+  function esc(value) {
+    return String(value == null ? '' : value).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+
+  function render(data) {
+    snapshot = data;
+    $('current').textContent = data.current || '未知';
+    $('latest').textContent = data.core.version || '未知';
+    $('pluginSummary').textContent = data.plan.updates + ' 个更新 / ' + data.plan.keeps + ' 个保持';
+    const core = data.core.update ? '<span class="badge warn">核心有新版</span>' : '<span class="badge">核心已是最新</span>';
+    $('state').innerHTML = core;
+    $('update').disabled = !data.updateAvailable;
+    $('plugins').innerHTML = data.plan.items.map((item) => '<tr>' +
+      '<td>' + esc(item.name) + '</td><td>' + esc(item.from || '—') + '</td>' +
+      '<td>' + esc(item.to || '不变') + '</td>' +
+      '<td><span class="tag ' + (item.action === 'update' ? 'update' : 'keep') + '">' +
+      (item.action === 'update' ? '更新' : '保持') + '</span></td></tr>').join('') ||
+      '<tr><td colspan="4">没有插件</td></tr>';
+  }
+
+  async function load() {
+    $('check').disabled = true;
+    try {
+      const response = await fetch('/dsh-update/api/status', { cache: 'no-store' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+      render(data);
+    } catch (error) {
+      $('state').textContent = '检查失败：' + error.message;
+    } finally {
+      $('check').disabled = false;
+    }
+  }
+
+  async function pollResult() {
+    if (!runId) return;
+    try {
+      const response = await fetch('/dsh-update/api/result?run=' + encodeURIComponent(runId), { cache: 'no-store' });
+      if (!response.ok) return;
+      const result = await response.json();
+      $('progressCard').hidden = false;
+      $('progress').textContent = JSON.stringify(result, null, 2);
+      if (result.state === 'succeeded' || result.state === 'failed') {
+        clearInterval(poll);
+        $('state').textContent = result.message || result.state;
+      }
+    } catch { /* app may be closing */ }
+  }
+
+  $('check').onclick = load;
+  $('update').onclick = async () => {
+    if (!snapshot || !snapshot.updateAvailable) return;
+    const coreText = snapshot.core.update ? ('核心 ' + snapshot.current + ' → ' + snapshot.core.version) : '核心不变';
+    const ok = confirm('即将关闭并重启 DeepSeek Harness。\n' + coreText + '，' + snapshot.plan.updates + ' 个插件更新。\n\n请先保存正在编辑的内容，然后确认继续。');
+    if (!ok) return;
+    $('update').disabled = true;
+    $('progressCard').hidden = false;
+    $('progress').textContent = '正在启动更新…';
+    try {
+      const response = await fetch('/dsh-update/api/update', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ confirm: true }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+      runId = data.runDir.split(/[\\/]/).pop();
+      poll = setInterval(pollResult, 1000);
+      pollResult();
+    } catch (error) {
+      $('state').textContent = '更新失败：' + error.message;
+      $('update').disabled = false;
+    }
+  };
+
+  load();
+})();
+</script>
+</body>
+</html>

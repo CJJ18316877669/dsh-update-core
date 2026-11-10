@@ -2,6 +2,20 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
+## [0.3.0] - 2026-11-10
+
+### Added
+
+- DSH Desktop settings plugin: real one-click core + plugin update.
+- Official Desktop feed check, installer download, Authenticode verification and detached helper.
+- Plugin plan updates only plugins with a higher version compatible with the target core; incompatible latest releases keep the installed version and are never disabled.
+- Helper closes Desktop, installs the core update, runs pnpm in the profile, and restarts Desktop with a clean environment.
+- Real-run result: 6 plugins updated, 9 kept, 0 disabled; Desktop restarted after the helper.
+
+### Tests
+
+- Added plugin plan tests; **117/117** pass.
+
 ## [0.2.4] - 2026-11-09
 
 ### Fixed

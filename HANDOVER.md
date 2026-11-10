@@ -1,7 +1,7 @@
 # DeepSeek Harness 一键更新器 · 交接文档
 
 > 更新时间：2026-11-09（UTC+8）
-> 当前版本：`dsh-update-core@0.3.0`；测试 117 项；仅支持 Windows；含 Desktop DSH 一键更新插件
+> 当前版本：`dsh-update-core@0.3.1`；测试 123 项；仅支持 Windows；含 Desktop DSH 一键更新插件
 > 仓库：https://github.com/CJJ18316877669/dsh-update-core
 > 项目根目录：`C:\Users\18316\Desktop\DeepSeek-Harness-一键更新方案`
 
@@ -18,7 +18,7 @@ npm run ui
 
 预期：
 
-- 117/117 测试通过。
+- 123/123 测试通过。
 - Desktop DSH 插件实测：6 个插件更新、9 个保持、0 个禁用；helper 重启验证通过。
 - 真实 registry 冒烟返回 tarball 字节数与 SRI 结果；当前开发机 Node 22 会同时报告 dsh 要求 Node ≥24.9.0 的运行时阻断。
 - success 退出 0，journal `committed`，watchdog 心跳 ≥1。

@@ -47,6 +47,46 @@ export function compat(manifest, targetCore) {
   return { status: 'unknown', reason: 'no-version-contract' };
 }
 
+export function normalizeRepo(value) {
+  if (!value) return null;
+  const raw = typeof value === 'string'
+    ? value
+    : (value && typeof value === 'object' && typeof value.url === 'string' ? value.url : null);
+  if (!raw) return null;
+  const match = raw.match(/github\.com[/:]([^/]+)\/([^/#]+?)(?:\.git)?(?:[#/].*)?$/i);
+  if (match) return `${match[1]}/${match[2]}`.toLowerCase();
+  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(raw)) return raw.toLowerCase();
+  return null;
+}
+
+export function repositoryOf(manifest) {
+  return normalizeRepo(manifest && manifest.repository);
+}
+
+export function githubRepoFromSpec(spec) {
+  if (typeof spec !== 'string') return null;
+  let value = spec.trim();
+  if (value.startsWith('github:')) value = value.slice(7);
+  value = value.replace(/^git\+/, '').replace(/^git:/, '');
+  if (value.startsWith('https://github.com/') || value.startsWith('http://github.com/')) {
+    value = value.replace(/^https?:\/\/github\.com\//, '');
+    value = value.replace(/#.*$/, '').replace(/\.git$/, '').replace(/\/$/, '');
+    const parts = value.split('/');
+    if (parts.length >= 2) return `${parts[0]}/${parts[1]}`.toLowerCase();
+    return null;
+  }
+  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:#.*)?$/.test(value)) {
+    return value.replace(/#.*$/, '').toLowerCase();
+  }
+  return null;
+}
+
+function withGitRef(spec, ref) {
+  if (typeof spec !== 'string' || !ref) return spec;
+  const base = spec.replace(/#.*$/, '');
+  return `${base}#${ref}`;
+}
+
 function pickCompatible(versions, targetCore) {
   const ranked = [];
   for (const entry of versions || []) {
@@ -123,6 +163,7 @@ export async function resolvePluginVersions(names, registry = DEFAULT_REGISTRY) 
         result.set(name, Object.entries(packument.versions || {}).map(([version, meta]) => ({
           version,
           deprecated: Boolean(meta && meta.deprecated),
+          repository: meta?.repository || packument.repository || null,
           manifest: meta ? { engines: meta.engines, peerDependencies: meta.peerDependencies } : null,
         })));
       } catch {
@@ -139,26 +180,77 @@ function isPluginDependency(name, bundles) {
   return /^(?:@[^/]+\/)?dsh-/.test(name);
 }
 
-export function createPluginPlan(dependencies, installedManifests, available, targetCore, bundles = new Set()) {
+export function createPluginPlan(dependencies, installedManifests, available, targetCore, bundles = new Set(), options = {}) {
+  const ignored = options.ignored instanceof Map ? options.ignored : new Map();
+  const github = options.github instanceof Map ? options.github : new Map();
   const items = [];
   for (const [name, spec] of Object.entries(dependencies || {})) {
     if (looksLikeCore(name)) continue;
-    const from = installedManifests.get(name)?.version || (typeof spec === 'string' ? spec : '');
+    const manifest = installedManifests.get(name) || null;
+    const from = manifest?.version || (typeof spec === 'string' ? spec : '');
     if (!isPluginDependency(name, bundles)) {
       items.push({ name, action: 'keep', from, to: null, reason: 'non-plugin-dependency' });
       continue;
     }
     const registry = typeof spec === 'string'
       && !/^(?:file:|link:|git|github:|https?:|workspace:)/.test(spec);
+    const currentVersion = manifest?.version || parseInstalledVersion(spec) || '';
+    const installedRepo = repositoryOf(manifest);
+
     if (!registry) {
-      items.push({ name, action: 'keep', from, to: null, reason: 'non-registry-source' });
+      const githubInfo = github.get(name);
+      if (!githubInfo || !Array.isArray(githubInfo.versions)) {
+        items.push({ name, action: 'keep', from, to: null, reason: 'non-registry-source' });
+        continue;
+      }
+      const specRepo = githubRepoFromSpec(spec);
+      if (installedRepo && specRepo && installedRepo !== specRepo) {
+        items.push({ name, action: 'keep', from, to: null, reason: 'repository-mismatch' });
+        continue;
+      }
+      const best = pickCompatible(githubInfo.versions, targetCore);
+      if (best && best.version === ignored.get(name)) {
+        items.push({ name, action: 'keep', from: currentVersion, to: null, reason: 'ignored-version' });
+        continue;
+      }
+      if (best && currentVersion && parse(currentVersion) && compare(best.version, currentVersion) > 0) {
+        items.push({
+          name,
+          action: 'update',
+          from: currentVersion,
+          to: withGitRef(spec, best.ref || best.version),
+          version: best.version,
+          source: 'github',
+          reason: 'compatible-newer-version',
+        });
+        continue;
+      }
+      items.push({
+        name,
+        action: 'keep',
+        from: currentVersion,
+        to: null,
+        reason: best ? 'already-current' : 'no-compatible-newer-version',
+      });
       continue;
     }
-    const manifest = installedManifests.get(name) || null;
-    const currentVersion = manifest?.version || parseInstalledVersion(spec) || '';
+
     const best = pickCompatible(available.get(name) || [], targetCore);
-    if (best && currentVersion && parse(currentVersion) && compare(best.version, currentVersion) > 0) {
-      items.push({ name, action: 'update', from: currentVersion, to: best.version, reason: 'compatible-newer-version' });
+    if (!best) {
+      items.push({ name, action: 'keep', from: currentVersion, to: null, reason: 'no-compatible-newer-version' });
+      continue;
+    }
+    if (best.version === ignored.get(name)) {
+      items.push({ name, action: 'keep', from: currentVersion, to: null, reason: 'ignored-version' });
+      continue;
+    }
+    const bestRepo = normalizeRepo(best.repository);
+    if (installedRepo && bestRepo && installedRepo !== bestRepo) {
+      items.push({ name, action: 'keep', from: currentVersion, to: null, reason: 'repository-mismatch' });
+      continue;
+    }
+    if (currentVersion && parse(currentVersion) && compare(best.version, currentVersion) > 0) {
+      items.push({ name, action: 'update', from: currentVersion, to: best.version, source: 'registry', reason: 'compatible-newer-version' });
       continue;
     }
     // Requirement: never disable a plugin merely because its newest release is
@@ -168,7 +260,7 @@ export function createPluginPlan(dependencies, installedManifests, available, ta
       action: 'keep',
       from: currentVersion,
       to: null,
-      reason: best ? 'already-current' : 'no-compatible-newer-version',
+      reason: 'already-current',
     });
   }
   return {
@@ -181,22 +273,84 @@ export function createPluginPlan(dependencies, installedManifests, available, ta
   };
 }
 
-export async function buildPlan({ profileDir, targetCore, registry }) {
+const githubCache = new Map();
+
+export async function resolveGithubVersions(repo, expectedName, token = process.env.DSH_GITHUB_TOKEN || process.env.GITHUB_TOKEN) {
+  if (!repo) return { versions: [] };
+  const cached = githubCache.get(repo);
+  if (cached && Date.now() - cached.at < 5 * 60_000) return cached.value;
+  const headers = {
+    accept: 'application/vnd.github+json',
+    'user-agent': 'dsh-update-core-plugin/0.1.0',
+    'x-github-api-version': '2022-11-28',
+    ...(token ? { authorization: `Bearer ${token}` } : {}),
+  };
+  let refs = [];
+  try {
+    const response = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=30`, {
+      headers, signal: AbortSignal.timeout(20000),
+    });
+    if (response.ok) {
+      const releases = await response.json();
+      refs = releases
+        .filter((release) => !release.draft && !release.prerelease)
+        .map((release) => ({ ref: release.tag_name, version: String(release.tag_name || '').replace(/^v/i, '') }))
+        .filter((entry) => parse(entry.version));
+    }
+  } catch { /* tags fallback below */ }
+  if (refs.length === 0) {
+    try {
+      const response = await fetch(`https://api.github.com/repos/${repo}/tags?per_page=30`, {
+        headers, signal: AbortSignal.timeout(20000),
+      });
+      if (response.ok) {
+        refs = (await response.json()).map((tag) => ({
+          ref: tag.name,
+          version: String(tag.name || '').replace(/^v/i, ''),
+        })).filter((entry) => parse(entry.version));
+      }
+    } catch { /* keep empty */ }
+  }
+  const versions = [];
+  for (const entry of refs.slice(0, 12)) {
+    try {
+      const raw = await fetch(`https://raw.githubusercontent.com/${repo}/${encodeURIComponent(entry.ref)}/package.json`, {
+        signal: AbortSignal.timeout(15000), headers: { 'user-agent': 'dsh-update-core-plugin/0.1.0' },
+      });
+      if (!raw.ok) continue;
+      const manifest = await raw.json();
+      if (manifest.name !== expectedName || manifest.version !== entry.version) continue;
+      versions.push({ version: entry.version, ref: entry.ref, repository: repo, manifest });
+    } catch { /* skip malformed tag */ }
+  }
+  const value = { versions };
+  githubCache.set(repo, { at: Date.now(), value });
+  return value;
+}
+
+export async function buildPlan({ profileDir, targetCore, registry, ignored = new Map() }) {
   const effectiveRegistry = registry || await configuredRegistry(profileDir);
   const profile = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8'));
   const dependencies = profile.dependencies && typeof profile.dependencies === 'object' ? profile.dependencies : {};
   const bundles = new Set(Array.isArray(profile.dsh?.profile?.bundles) ? profile.dsh.profile.bundles : []);
-  const pluginNames = Object.keys(dependencies).filter((name) => !looksLikeCore(name)
-    && isPluginDependency(name, bundles)
-    && typeof dependencies[name] === 'string'
-    && !/^(?:file:|link:|git|github:|https?:|workspace:)/.test(dependencies[name]));
-  const available = await resolvePluginVersions(pluginNames, effectiveRegistry);
   const manifests = new Map();
   await Promise.all(Object.keys(dependencies).map(async (name) => {
     const manifest = await readManifest(profileDir, name);
     if (manifest) manifests.set(name, manifest);
   }));
-  return createPluginPlan(dependencies, manifests, available, targetCore, bundles);
+  const plugins = Object.keys(dependencies).filter((name) => !looksLikeCore(name)
+    && isPluginDependency(name, bundles)
+    && typeof dependencies[name] === 'string');
+  const pluginNames = plugins.filter((name) => !/^(?:file:|link:|git|github:|https?:|workspace:)/.test(dependencies[name]));
+  const externalNames = plugins.filter((name) => /^(?:git|github:|https?:)/.test(dependencies[name]));
+  const available = await resolvePluginVersions(pluginNames, effectiveRegistry);
+  const github = new Map();
+  await Promise.all(externalNames.map(async (name) => {
+    const repo = repositoryOf(manifests.get(name)) || githubRepoFromSpec(dependencies[name]);
+    if (!repo) return;
+    github.set(name, await resolveGithubVersions(repo, name));
+  }));
+  return createPluginPlan(dependencies, manifests, available, targetCore, bundles, { ignored, github });
 }
 
 export async function findDesktopExe() {
@@ -241,6 +395,11 @@ export async function readDesktopVersion(exe) {
   const product = await readProductVersion(exe);
   const match = product.match(/^(\d+\.\d+\.\d+)/);
   return match ? match[1] : product;
+}
+
+export function desktopInstallerUrl(version) {
+  if (!version || !parse(version)) return null;
+  return `https://download.deepseek.com/dsh-desk/bin/win-x64/deepseek-harness-${version}-win-x64.exe`;
 }
 
 export async function checkDesktop({ feedUrl = DEFAULT_FEED, currentVersion, targetCore } = {}) {

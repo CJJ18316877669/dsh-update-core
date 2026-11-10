@@ -28,6 +28,12 @@
   .tag.keep { background: #f1f5f9; color: #475569; }
   pre { white-space: pre-wrap; font-size: 12px; background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 8px; max-height: 220px; overflow: auto; }
   .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .meta { font-size: 12px; color: var(--muted, #6b7280); margin-top: 8px; }
+  .mini { padding: 4px 8px; font-size: 12px; font-weight: 500; background: #eef0f3; color: inherit; }
+  .danger { background: #fee2e2; color: #991b1b; }
+  .history { font-size: 12px; }
+  .history td { vertical-align: top; }
+  .muted { color: var(--muted, #6b7280); }
 </style>
 </head>
 <body>
@@ -42,14 +48,23 @@
   <div class="row">
     <button id="check">重新检查</button>
     <button id="update" disabled>一键更新并重启</button>
+    <button id="rollback" class="mini danger" disabled>回滚上一版本</button>
     <span id="state"></span>
   </div>
+  <div class="meta" id="meta"></div>
 </div>
 <div class="card">
   <h1 style="font-size:16px">插件计划</h1>
   <table>
-    <thead><tr><th>插件</th><th>当前</th><th>目标</th><th>处置</th></tr></thead>
-    <tbody id="plugins"><tr><td colspan="4">正在读取…</td></tr></tbody>
+    <thead><tr><th>插件</th><th>当前</th><th>目标</th><th>处置</th><th>操作</th></tr></thead>
+    <tbody id="plugins"><tr><td colspan="5">正在读取…</td></tr></tbody>
+  </table>
+</div>
+<div class="card">
+  <h1 style="font-size:16px">更新历史</h1>
+  <table class="history">
+    <thead><tr><th>时间</th><th>状态</th><th>核心</th><th>插件</th><th>结果</th></tr></thead>
+    <tbody id="history"><tr><td colspan="5" class="muted">暂无记录</td></tr></tbody>
   </table>
 </div>
 <div class="card" id="progressCard" hidden>
@@ -67,6 +82,22 @@
     return String(value == null ? '' : value).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
 
+  function renderHistory(history) {
+    if (!Array.isArray(history) || history.length === 0) {
+      $('history').innerHTML = '<tr><td colspan="5" class="muted">暂无记录</td></tr>';
+      return;
+    }
+    $('history').innerHTML = history.map((entry) => {
+      const when = entry.startedAt ? new Date(entry.startedAt).toLocaleString() : entry.run;
+      const stateClass = entry.state === 'succeeded' ? 'badge' : 'badge warn';
+      return '<tr><td>' + esc(when) + '</td>' +
+        '<td><span class="' + stateClass + '">' + esc(entry.state) + '</span></td>' +
+        '<td>' + esc(entry.coreVersion || entry.targetCore || '—') + '</td>' +
+        '<td>' + (entry.updated ? entry.updated.length : 0) + ' 更新 / ' + (entry.kept || 0) + ' 保持</td>' +
+        '<td>' + esc(entry.message || '') + (entry.rolledBack ? ' · 已回滚' : '') + '</td></tr>';
+    }).join('');
+  }
+
   function render(data) {
     snapshot = data;
     $('current').textContent = data.current || '未知';
@@ -75,12 +106,30 @@
     const core = data.core.update ? '<span class="badge warn">核心有新版</span>' : '<span class="badge">核心已是最新</span>';
     $('state').innerHTML = core;
     $('update').disabled = !data.updateAvailable;
-    $('plugins').innerHTML = data.plan.items.map((item) => '<tr>' +
-      '<td>' + esc(item.name) + '</td><td>' + esc(item.from || '—') + '</td>' +
-      '<td>' + esc(item.to || '不变') + '</td>' +
-      '<td><span class="tag ' + (item.action === 'update' ? 'update' : 'keep') + '">' +
-      (item.action === 'update' ? '更新' : '保持') + '</span></td></tr>').join('') ||
-      '<tr><td colspan="4">没有插件</td></tr>';
+    $('rollback').disabled = !(data.coreState && (data.coreState.rollbackInstaller || data.coreState.rollbackPackage));
+    $('meta').textContent = '上次检查 ' + (data.checkedAt ? new Date(data.checkedAt).toLocaleString() : '—') +
+      ' · 自动检查每 ' + (data.autoCheckHours || 0) + ' 小时' +
+      (data.coreState && data.coreState.rollbackInstaller
+        ? ' · 可回滚核心 ' + data.coreState.currentBefore
+        : (data.coreState ? ' · 可回滚插件' : ''));
+    $('plugins').innerHTML = data.plan.items.map((item) => {
+      let action = '<span class="tag ' + (item.action === 'update' ? 'update' : 'keep') + '">' +
+        (item.action === 'update' ? '更新' : '保持') + '</span>';
+      let button = '';
+      if (item.action === 'update') {
+        button = '<button class="mini" data-ignore="' + esc(item.name) + '" data-version="' +
+          esc(item.version || item.to) + '">忽略此版本</button>';
+      } else if (item.reason === 'ignored-version' && data.ignored && data.ignored[item.name]) {
+        button = '<button class="mini" data-clear="' + esc(item.name) + '">取消忽略</button>';
+        action += ' <span class="tag">已忽略 ' + esc(data.ignored[item.name]) + '</span>';
+      } else if (item.reason === 'repository-mismatch') {
+        action += ' <span class="tag">仓库不一致</span>';
+      }
+      return '<tr><td>' + esc(item.name) + '</td><td>' + esc(item.from || '—') + '</td>' +
+        '<td>' + esc(item.version || item.to || '不变') + '</td>' +
+        '<td>' + action + '</td><td>' + button + '</td></tr>';
+    }).join('') || '<tr><td colspan="5">没有插件</td></tr>';
+    renderHistory(data.history);
   }
 
   async function load() {
@@ -105,9 +154,10 @@
       const result = await response.json();
       $('progressCard').hidden = false;
       $('progress').textContent = JSON.stringify(result, null, 2);
-      if (result.state === 'succeeded' || result.state === 'failed') {
+      if (['succeeded', 'failed', 'rolled-back'].includes(result.state)) {
         clearInterval(poll);
         $('state').textContent = result.message || result.state;
+        setTimeout(load, 1500);
       }
     } catch { /* app may be closing */ }
   }
@@ -133,6 +183,47 @@
     } catch (error) {
       $('state').textContent = '更新失败：' + error.message;
       $('update').disabled = false;
+    }
+  };
+
+  $('plugins').onclick = async (event) => {
+    const ignore = event.target.closest('[data-ignore]');
+    const clear = event.target.closest('[data-clear]');
+    if (!ignore && !clear) return;
+    event.preventDefault();
+    const body = ignore
+      ? { name: ignore.dataset.ignore, version: ignore.dataset.version }
+      : { name: clear.dataset.clear, clear: true };
+    try {
+      const response = await fetch('/dsh-update/api/ignore', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+      render(data);
+    } catch (error) {
+      $('state').textContent = '操作失败：' + error.message;
+    }
+  };
+
+  $('rollback').onclick = async () => {
+    if (!snapshot || !snapshot.coreState) return;
+    if (!confirm('将回滚核心和插件到更新前状态，并重启 DeepSeek Harness。确认继续？')) return;
+    $('rollback').disabled = true;
+    $('progressCard').hidden = false;
+    $('progress').textContent = '正在启动回滚…';
+    try {
+      const response = await fetch('/dsh-update/api/rollback', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ confirm: true }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+      runId = data.runDir.split(/[\\/]/).pop();
+      poll = setInterval(pollResult, 1000);
+      pollResult();
+    } catch (error) {
+      $('state').textContent = '回滚失败：' + error.message;
+      $('rollback').disabled = false;
     }
   };
 

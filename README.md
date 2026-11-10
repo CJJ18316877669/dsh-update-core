@@ -5,7 +5,7 @@
 > 适用：DeepSeek Harness（`dsh`）0.2.x，Cordis「一切皆插件」架构
 > 目标：一个按钮完成 Harness 版本更新，并保证现有插件在新版本上仍可加载；失败可回滚，结果可解释。
 
-**当前状态：`dsh-update-core@0.3.0` 可运行、可测试、可复用，仅支持 Windows。** 117 项自动化测试通过；已提供 Desktop 设置页 DSH 插件，可一键更新核心与兼容插件；已覆盖真实 `cordis.patch.yml` 禁用/逐字节恢复、staging 启动门控、原子切换、独立 watchdog、跨平台路径与进程树、默认关闭的遥测上报、真实 registry SRI 冒烟，以及 live 原型。真实 Node 24 + dsh staging 与 Windows Desktop 签名/启动证据见 `docs/REAL_ACCEPTANCE.md`。
+**当前状态：`dsh-update-core@0.3.1` 可运行、可测试、可复用，仅支持 Windows。** 123 项自动化测试通过；已提供 Desktop 设置页 DSH 插件，可一键更新核心与兼容插件；已覆盖真实 `cordis.patch.yml` 禁用/逐字节恢复、staging 启动门控、原子切换、独立 watchdog、跨平台路径与进程树、默认关闭的遥测上报、真实 registry SRI 冒烟，以及 live 原型。真实 Node 24 + dsh staging 与 Windows Desktop 签名/启动证据见 `docs/REAL_ACCEPTANCE.md`。
 
 ---
 
@@ -29,9 +29,15 @@ cd dsh-update-core
 
 - 有兼容新核心的更高版本：更新；
 - 最新版本不兼容目标核心：保持当前版本，不删除、不禁用；
-- git/file/链接依赖：保持不动。
+- git/GitHub 依赖：解析 release/tag，只接受包名、版本和 DSH 兼容性都匹配的版本；
+- 同名但仓库不一致：拒绝更新，标记 `repository-mismatch`；
+- 可对单个插件“忽略此版本”，上游再发新版本后会重新提示；
+- 每 6 小时自动检查一次（可通过 `autoCheckHours` 调整）；
+- 展示最近 30 次更新历史，包括核心版本、插件数量和回滚结果。
 
-点击“一键更新并重启”后，插件会启动外部 helper：关闭 Desktop、下载并校验官方安装包（核心有新版时）、按计划更新 profile 插件、重新启动 Desktop。更新前会备份 `package.json` 和锁文件到：
+点击“一键更新并重启”后，插件会启动外部 helper：关闭 Desktop、下载并校验官方安装包（核心有新版时）、按计划更新 profile 插件、启动新版本并等待插件心跳确认健康。核心更新前还会预先下载当前版本的官方安装包，并备份 profile 清单与锁文件，用于失败自动回滚和手动“回滚上一版本”。
+
+更新前备份位于：
 
 ```text
 ~/.dsh/updates/dsh-update-plugin/<run>/
@@ -44,7 +50,7 @@ cd dsh-update-core
 要求 Node.js ≥ 20；真实 dsh 当前 release 自身要求 Node.js ≥ 24.9.0，更新器会在下载前按目标包的 `engines.node` 拒绝不满足的宿主。
 
 ```bash
-npm test                         # 117 项，零依赖
+npm test                         # 123 项，零依赖
 npm run ui                       # live 原型，默认仅监听 127.0.0.1 的随机端口
 npm run smoke:registry           # 真实 registry + tarball SRI 冒烟
 node src/cli.mjs demo --scenario success --fast
@@ -61,7 +67,7 @@ node src/cli.mjs status --home <dir>
 | `README.md` | 设计事实源、调研、状态机、流程、兼容、回滚与当前实现边界 |
 | `HANDOVER.md` | 当前实现状态、验收命令、剩余外部风险和交接说明 |
 | `src/` | 零依赖 ESM 实现：编排、Journal、watchdog、ProfileStore、门控、后端、路径/进程/文件系统、i18n、遥测、live server |
-| `test/` | 117 项单元、集成、CLI 契约、故障注入与安全边界用例 |
+| `test/` | 123 项单元、集成、CLI 契约、故障注入与安全边界用例 |
 | `prototype.html` / `preview*.png` | live/离线双模式原型与 6 张由真实页面重拍的 1080×1100 截图 |
 | `scripts/` | 真实 registry 冒烟与 Edge DevTools 截图脚本 |
 | `LICENSE` / `CHANGELOG.md` / `SECURITY.md` / `PRIVACY.md` | MIT 许可、版本记录、安全与隐私说明 |

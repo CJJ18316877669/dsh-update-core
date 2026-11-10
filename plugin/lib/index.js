@@ -1,7 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
-import { createWriteStream } from 'node:fs';
-import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createWriteStream, existsSync } from 'node:fs';
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -10,9 +9,22 @@ import {
   buildPlan,
   checkDesktop,
   defaultPaths,
+  desktopInstallerUrl,
   findDesktopExe,
   readDesktopVersion,
 } from './plan.mjs';
+import {
+  listHistory,
+  readCoreState,
+  readHeartbeat,
+  readIgnored,
+  readLastPlan,
+  setIgnored,
+  stateDir,
+  writeCoreState,
+  writeHeartbeat,
+  writeLastPlan,
+} from './store.mjs';
 
 export const name = 'dsh-update-core-plugin';
 export const inject = ['webServer'];
@@ -53,11 +65,38 @@ async function download(url, destination) {
   await pipeline(Readable.fromWeb(response.body), createWriteStream(destination));
 }
 
+async function downloadVerified(url, destination) {
+  await download(url, destination);
+  const signature = await verifySignature(destination);
+  if (signature !== 'Valid') throw new Error(`安装包签名无效：${signature}`);
+  return destination;
+}
+
+function pnpmPath(paths, exe) {
+  const candidates = [
+    join(paths.profileDir, 'node_modules', '.bin', 'pnpm.cjs'),
+    join(dirname(exe), 'resources', 'runtime', 'primary-runtime', 'dependencies', 'pnpm', 'bin', 'pnpm.cjs'),
+  ];
+  return candidates.find((candidate) => existsSync(candidate)) || candidates[0];
+}
+
+function spawnHelper(args) {
+  const child = spawn(process.execPath, [HELPER, ...args], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '' },
+  });
+  child.unref();
+}
+
 export function mountRoutes(webServer, config = {}) {
   const paths = defaultPaths(config);
+  const updatesDir = paths.updatesDir;
   let cache = null;
   let cacheAt = 0;
   let running = false;
+  let timer = null;
 
   async function status(force = false) {
     if (!force && cache && Date.now() - cacheAt < CACHE_MS) return cache;
@@ -66,17 +105,30 @@ export function mountRoutes(webServer, config = {}) {
     const current = await readDesktopVersion(exe);
     const core = await checkDesktop({ currentVersion: current, feedUrl: config.feedUrl });
     const targetCore = core.update ? core.version : current;
+    const ignored = await readIgnored(paths);
     const plan = await buildPlan({
       profileDir: paths.profileDir,
       targetCore,
       registry: config.registry || process.env.DSH_UPDATE_REGISTRY || undefined,
+      ignored,
     });
+    const [history, coreState, heartbeat] = await Promise.all([
+      listHistory(paths, 12),
+      readCoreState(paths),
+      readHeartbeat(paths),
+    ]);
     cache = {
       exe,
       current,
       core,
       plan,
       profile: paths.profileName,
+      ignored: Object.fromEntries(ignored),
+      history,
+      coreState,
+      heartbeat,
+      autoCheckHours: Number(config.autoCheckHours ?? 6),
+      checkedAt: new Date().toISOString(),
       updateAvailable: core.update || plan.updates > 0,
       running,
     };
@@ -90,44 +142,91 @@ export function mountRoutes(webServer, config = {}) {
     if (!snapshot.updateAvailable) throw Object.assign(new Error('已经是最新版本，无需更新'), { status: 409 });
     running = true;
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const runDir = join(paths.updatesDir, stamp);
+    const runDir = join(updatesDir, stamp);
+    const rollbackDir = join(updatesDir, 'rollback');
     await mkdir(runDir, { recursive: true });
+    await mkdir(rollbackDir, { recursive: true });
     const planPath = join(runDir, 'plan.json');
     const resultPath = join(runDir, 'result.json');
+    const statePath = join(runDir, 'state.json');
     let installer = '';
-    if (snapshot.core.update && snapshot.core.installerUrl) {
-      installer = join(runDir, 'installer.exe');
-      await download(snapshot.core.installerUrl, installer);
-      const signature = await verifySignature(installer);
-      if (signature !== 'Valid') {
-        running = false;
-        throw Object.assign(new Error(`安装包签名无效：${signature}`), { status: 500 });
+    let rollbackInstaller = '';
+    try {
+      if (snapshot.core.update) {
+        if (!snapshot.core.installerUrl) throw new Error('官方 feed 没有安装包地址');
+        installer = await downloadVerified(snapshot.core.installerUrl, join(runDir, 'installer.exe'));
+        const rollbackUrl = desktopInstallerUrl(snapshot.current);
+        if (rollbackUrl) {
+          try {
+            rollbackInstaller = await downloadVerified(rollbackUrl, join(rollbackDir, 'installer.exe'));
+          } catch {
+            // A local/unsigned build may not have an official rollback installer.
+            // Continue, but expose that the core rollback point is unavailable.
+            rollbackInstaller = '';
+          }
+        }
       }
+      const profilePackage = join(paths.profileDir, 'package.json');
+      await copyFile(profilePackage, join(rollbackDir, 'package.json'));
+      for (const name of ['pnpm-lock.yaml', 'package-lock.json']) {
+        try { await copyFile(join(paths.profileDir, name), join(rollbackDir, name)); } catch { /* optional */ }
+      }
+      await writeCoreState(paths, {
+        currentBefore: snapshot.current,
+        targetVersion: snapshot.plan.targetCore,
+        rollbackExe: snapshot.exe,
+        rollbackInstaller: snapshot.core.update ? (rollbackInstaller || null) : null,
+        rollbackPackage: join(rollbackDir, 'package.json'),
+        lastRun: stamp,
+      });
+      await writeFile(planPath, `${JSON.stringify(snapshot.plan, null, 2)}\n`, 'utf8');
+      await writeFile(statePath, `${JSON.stringify({ run: stamp, coreRollback: rollbackInstaller || null }, null, 2)}\n`, 'utf8');
+      await writeFile(resultPath, `${JSON.stringify({ state: 'starting', message: '正在启动更新…', startedAt: new Date().toISOString() }, null, 2)}\n`, 'utf8');
+      await writeLastPlan(paths, stamp, snapshot.plan);
+      spawnHelper([
+        '--exe', snapshot.exe,
+        '--profile', paths.profileDir,
+        '--plan', planPath,
+        '--result', resultPath,
+        '--pnpm', pnpmPath(paths, snapshot.exe),
+        '--heartbeat', join(stateDir(paths), 'heartbeat.json'),
+        ...(installer ? ['--installer', installer] : []),
+        ...(rollbackInstaller ? ['--rollback-installer', rollbackInstaller] : []),
+      ]);
+      return { accepted: true, resultPath, runDir, run: stamp };
+    } catch (error) {
+      running = false;
+      throw error;
     }
-    await writeFile(planPath, `${JSON.stringify(snapshot.plan, null, 2)}\n`, 'utf8');
-    await writeFile(resultPath, `${JSON.stringify({ state: 'starting', message: '正在启动更新…' }, null, 2)}\n`, 'utf8');
-    const pnpmCandidates = [
-      join(paths.profileDir, 'node_modules', '.bin', 'pnpm.cjs'),
-      join(dirname(snapshot.exe), 'resources', 'runtime', 'primary-runtime', 'dependencies', 'pnpm', 'bin', 'pnpm.cjs'),
-    ];
-    const pnpm = pnpmCandidates.find((candidate) => existsSync(candidate)) || pnpmCandidates[0];
-    const args = [
-      HELPER,
-      '--exe', snapshot.exe,
+  }
+
+  async function startRollback() {
+    if (running) throw Object.assign(new Error('更新已在进行中'), { status: 409 });
+    const coreState = await readCoreState(paths);
+    if (!coreState) throw Object.assign(new Error('没有可用的回滚点'), { status: 409 });
+    running = true;
+    const targetExe = coreState.rollbackExe || (config.desktopExe || await findDesktopExe());
+    if (!targetExe) {
+      running = false;
+      throw Object.assign(new Error('找不到 Desktop 可执行文件'), { status: 500 });
+    }
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const runDir = join(updatesDir, stamp);
+    await mkdir(runDir, { recursive: true });
+    const resultPath = join(runDir, 'result.json');
+    await writeFile(resultPath, `${JSON.stringify({ state: 'starting', message: '正在回滚…', startedAt: new Date().toISOString() }, null, 2)}\n`, 'utf8');
+    spawnHelper([
+      '--exe', targetExe,
       '--profile', paths.profileDir,
-      '--plan', planPath,
       '--result', resultPath,
-      '--pnpm', pnpm,
-      ...(installer ? ['--installer', installer] : []),
-    ];
-    const child = spawn(process.execPath, args, {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '' },
-    });
-    child.unref();
-    return { accepted: true, resultPath, runDir };
+      '--pnpm', pnpmPath(paths, targetExe),
+      '--heartbeat', join(stateDir(paths), 'heartbeat.json'),
+      '--rollback-only', '1',
+      '--rollback-version', coreState.currentBefore,
+      ...(coreState.rollbackInstaller ? ['--rollback-installer', coreState.rollbackInstaller] : []),
+      '--rollback-package', coreState.rollbackPackage,
+    ]);
+    return { accepted: true, resultPath, runDir, run: stamp };
   }
 
   const routes = [
@@ -153,6 +252,38 @@ export function mountRoutes(webServer, config = {}) {
     },
     {
       kind: 'exact',
+      path: '/dsh-update/api/history',
+      handler: async (request, response) => {
+        if (request.method !== 'GET') return send(response, 405, { error: 'method not allowed' });
+        send(response, 200, {
+          history: await listHistory(paths, 30),
+          lastPlan: await readLastPlan(paths),
+          coreState: await readCoreState(paths),
+        });
+      },
+    },
+    {
+      kind: 'exact',
+      path: '/dsh-update/api/ignore',
+      handler: async (request, response) => {
+        if (request.method !== 'POST') return send(response, 405, { error: 'method not allowed' });
+        try {
+          const body = await readBody(request);
+          if (typeof body.name !== 'string' || body.name.trim() === '') {
+            return send(response, 400, { error: 'name required' });
+          }
+          if (body.clear === true) await setIgnored(paths, body.name, null);
+          else if (typeof body.version === 'string' && body.version) await setIgnored(paths, body.name, body.version);
+          else return send(response, 400, { error: 'version required' });
+          cache = null;
+          send(response, 200, await status(true));
+        } catch (error) {
+          send(response, 500, { error: error instanceof Error ? error.message : String(error) });
+        }
+      },
+    },
+    {
+      kind: 'exact',
       path: '/dsh-update/api/update',
       handler: async (request, response) => {
         if (request.method !== 'POST') return send(response, 405, { error: 'method not allowed' });
@@ -170,14 +301,30 @@ export function mountRoutes(webServer, config = {}) {
     },
     {
       kind: 'exact',
+      path: '/dsh-update/api/rollback',
+      handler: async (request, response) => {
+        if (request.method !== 'POST') return send(response, 405, { error: 'method not allowed' });
+        try {
+          const body = await readBody(request);
+          if (body.confirm !== true) return send(response, 422, { error: 'confirmation required' });
+          send(response, 202, await startRollback());
+        } catch (error) {
+          running = false;
+          send(response, error && error.status ? error.status : 500, {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      },
+    },
+    {
+      kind: 'exact',
       path: '/dsh-update/api/result',
       handler: async (request, response) => {
         if (request.method !== 'GET') return send(response, 405, { error: 'method not allowed' });
         const run = new URL(request.url, 'http://localhost').searchParams.get('run');
-        const root = paths.updatesDir;
         if (!run || !/^[0-9TZ:.-]+$/.test(run)) return send(response, 400, { error: 'invalid run id' });
         try {
-          send(response, 200, JSON.parse(await readFile(join(root, run, 'result.json'), 'utf8')));
+          send(response, 200, JSON.parse(await readFile(join(updatesDir, run, 'result.json'), 'utf8')));
         } catch {
           send(response, 404, { error: 'result not found' });
         }
@@ -185,10 +332,27 @@ export function mountRoutes(webServer, config = {}) {
     },
   ];
 
-  return routes.map((route) => webServer.register(route));
+  const hours = Number(config.autoCheckHours ?? 6);
+  if (Number.isFinite(hours) && hours > 0) {
+    const delay = setTimeout(() => { status(true).catch(() => {}); }, 15_000);
+    delay.unref?.();
+    timer = setInterval(() => { status(true).catch(() => {}); }, Math.max(1, hours) * 3_600_000);
+    timer.unref?.();
+  }
+
+  const disposers = routes.map((route) => webServer.register(route));
+  return [...disposers, () => {
+    if (timer) clearInterval(timer);
+  }];
 }
 
-export function apply(ctx, config = {}) {
+export async function apply(ctx, config = {}) {
+  const paths = defaultPaths(config);
+  await writeHeartbeat(paths, {
+    pid: process.pid,
+    version: '0.2.0',
+    state: 'loaded',
+  }).catch(() => {});
   ctx.inject(['webServer'], (host) => {
     host.effect(() => {
       const disposers = mountRoutes(host.webServer, config);

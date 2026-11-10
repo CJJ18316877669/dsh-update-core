@@ -2,6 +2,23 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
+## [0.3.1] - 2026-11-10
+
+### Added
+
+- Transactional core rollback: pre-downloads the currently installed official installer, verifies its signature, and restores the previous profile manifest on failure.
+- Manual “rollback previous version” action and `/api/rollback`.
+- Scheduled status checks (`autoCheckHours`, default 6) with last-check metadata.
+- Per-plugin exact-version ignore/clear (`/api/ignore`).
+- Update history UI and `/api/history` (last 30 runs).
+- GitHub release/tag resolution for `git+https`, `github:` and `owner/repo` dependencies.
+- Repository consistency guard for registry and GitHub updates (`repository-mismatch`).
+- Static package health checks after install and startup heartbeat verification before marking a run successful.
+
+### Tests
+
+- Added plan ignore/repository/GitHub tests plus store/history tests; **123/123** pass.
+
 ## [0.3.0] - 2026-11-10
 
 ### Added

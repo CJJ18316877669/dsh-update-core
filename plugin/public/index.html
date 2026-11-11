@@ -98,6 +98,29 @@
     }).join('');
   }
 
+  const STAGES = {
+    preparing: '准备更新', 'downloading-core': '下载核心安装包', 'downloading-rollback': '下载回滚安装包',
+    starting: '启动更新', closing: '关闭 Desktop', 'installing-core': '安装核心',
+    'updating-plugins': '更新插件', 'verifying-app': '启动并验证',
+    succeeded: '更新完成', failed: '更新失败', 'rolled-back': '已回滚', 'rolling-back': '正在回滚',
+  };
+
+  function renderProgress(result) {
+    $('progressCard').hidden = false;
+    const stage = STAGES[result.state] || result.state || '更新中';
+    const percent = typeof result.percent === 'number' && result.percent >= 0
+      ? ` ${Math.round(result.percent)}%` : '';
+    const size = result.total ? ` (${(result.total / 1024 / 1024).toFixed(1)} MB)` : '';
+    $('progress').textContent = `${stage}${percent}${size}\n${result.message || ''}\n最后更新：${result.updatedAt || '—'}`;
+  }
+
+  function startPolling(run) {
+    runId = run;
+    if (poll) clearInterval(poll);
+    poll = setInterval(pollResult, 1000);
+    pollResult();
+  }
+
   function render(data) {
     snapshot = data;
     $('current').textContent = data.current || '未知';
@@ -131,6 +154,10 @@
         '<td>' + action + '</td><td>' + button + '</td></tr>';
     }).join('') || '<tr><td colspan="5">没有插件</td></tr>';
     renderHistory(data.history);
+    if (data.activeRun && data.activeRun.run) {
+      renderProgress(data.activeRun);
+      startPolling(data.activeRun.run);
+    }
   }
 
   async function load() {
@@ -153,10 +180,10 @@
       const response = await fetch('/dsh-update/api/result?run=' + encodeURIComponent(runId), { cache: 'no-store' });
       if (!response.ok) return;
       const result = await response.json();
-      $('progressCard').hidden = false;
-      $('progress').textContent = JSON.stringify(result, null, 2);
+      renderProgress(result);
       if (['succeeded', 'failed', 'rolled-back'].includes(result.state)) {
         clearInterval(poll);
+        poll = null;
         $('state').textContent = result.message || result.state;
         setTimeout(load, 1500);
       }
@@ -178,9 +205,7 @@
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
-      runId = data.runDir.split(/[\\/]/).pop();
-      poll = setInterval(pollResult, 1000);
-      pollResult();
+      startPolling(data.run || data.runDir.split(/[\\/]/).pop());
     } catch (error) {
       $('state').textContent = '更新失败：' + error.message;
       $('update').disabled = false;
@@ -219,9 +244,7 @@
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
-      runId = data.runDir.split(/[\\/]/).pop();
-      poll = setInterval(pollResult, 1000);
-      pollResult();
+      startPolling(data.run || data.runDir.split(/[\\/]/).pop());
     } catch (error) {
       $('state').textContent = '回滚失败：' + error.message;
       $('rollback').disabled = false;

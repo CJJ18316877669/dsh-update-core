@@ -1,9 +1,10 @@
 import { execFile, spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 import { createWriteStream, existsSync } from 'node:fs';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
+import { once } from 'node:events';
 import { dirname, join } from 'node:path';
 import {
   buildPlan,
@@ -31,6 +32,7 @@ export const inject = ['webServer'];
 
 const PAGE = fileURLToPath(new URL('../public/index.html', import.meta.url));
 const HELPER = fileURLToPath(new URL('./helper.mjs', import.meta.url));
+const PROGRESS = fileURLToPath(new URL('./progress-server.mjs', import.meta.url));
 const CACHE_MS = 30_000;
 
 function send(response, status, body, type = 'application/json; charset=utf-8') {
@@ -58,18 +60,75 @@ async function verifySignature(file) {
   });
 }
 
-async function download(url, destination) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(10 * 60_000), headers: { 'user-agent': 'dsh-update-core-plugin/0.1.0' } });
+async function download(url, destination, onProgress) {
+  const response = await fetch(url, { signal: AbortSignal.timeout(10 * 60_000), headers: { 'user-agent': 'dsh-update-core-plugin/0.2.7' } });
   if (!response.ok || !response.body) throw new Error(`installer download HTTP ${response.status}`);
   await mkdir(dirname(destination), { recursive: true });
-  await pipeline(Readable.fromWeb(response.body), createWriteStream(destination));
+  const total = Number(response.headers.get('content-length')) || 0;
+  let received = 0;
+  let last = 0;
+  const writer = createWriteStream(destination);
+  try {
+    for await (const chunk of Readable.fromWeb(response.body)) {
+      if (!writer.write(chunk)) await once(writer, 'drain');
+      received += chunk.length;
+      if (Date.now() - last > 500) {
+        last = Date.now();
+        onProgress?.({ received, total, percent: total ? Math.min(100, received / total * 100) : undefined });
+      }
+    }
+    writer.end();
+    await once(writer, 'finish');
+    onProgress?.({ received, total, percent: 100 });
+  } catch (error) {
+    writer.destroy();
+    throw error;
+  }
 }
 
-async function downloadVerified(url, destination) {
-  await download(url, destination);
+async function downloadVerified(url, destination, onProgress) {
+  await download(url, destination, onProgress);
   const signature = await verifySignature(destination);
   if (signature !== 'Valid') throw new Error(`安装包签名无效：${signature}`);
   return destination;
+}
+
+async function freePort() {
+  const server = createServer();
+  await new Promise((resolve, reject) => server.listen(0, '127.0.0.1', resolve).once('error', reject));
+  const port = server.address().port;
+  await new Promise((resolve) => server.close(resolve));
+  return port;
+}
+
+async function launchProgressWindow(resultPath, desktopExe) {
+  try {
+    const port = await freePort();
+    const runner = helperExecutable(desktopExe);
+    const child = spawn(runner, [PROGRESS, '--result', resultPath, '--port', String(port)], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '' },
+    });
+    child.unref();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const url = `http://127.0.0.1:${port}/`;
+    const edge = [
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+      join(process.env.LOCALAPPDATA || '', 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    ].find((candidate) => existsSync(candidate));
+    if (edge) {
+      spawn(edge, [`--app=${url}`, '--window-size=560,460', '--no-first-run', '--disable-features=msEdgeSidebar'], {
+        detached: true, stdio: 'ignore', windowsHide: false,
+      }).unref();
+    } else {
+      spawn('rundll32.exe', ['url.dll,FileProtocolHandler', url], { detached: true, stdio: 'ignore' }).unref();
+    }
+  } catch {
+    // The in-app progress card remains available if the external window cannot open.
+  }
 }
 
 function pnpmPath(paths, exe) {
@@ -127,6 +186,14 @@ export function mountRoutes(webServer, config = {}) {
       readCoreState(paths),
       readHeartbeat(paths),
     ]);
+    let activeRun = null;
+    try {
+      const active = JSON.parse(await readFile(join(updatesDir, 'active-run.json'), 'utf8'));
+      const state = JSON.parse(await readFile(active.resultPath, 'utf8'));
+      if (active.run && !['succeeded', 'failed', 'rolled-back'].includes(state.state)) {
+        activeRun = { run: active.run, ...state };
+      }
+    } catch { /* no active run */ }
     cache = {
       exe,
       current,
@@ -137,6 +204,7 @@ export function mountRoutes(webServer, config = {}) {
       history,
       coreState,
       heartbeat,
+      activeRun,
       autoCheckHours: Number(config.autoCheckHours ?? 6),
       autoApply: config.autoApply === true,
       checkedAt: new Date().toISOString(),
@@ -160,16 +228,37 @@ export function mountRoutes(webServer, config = {}) {
     const planPath = join(runDir, 'plan.json');
     const resultPath = join(runDir, 'result.json');
     const statePath = join(runDir, 'state.json');
+    const startedAt = new Date().toISOString();
+    const writeResult = (extra) => writeFile(resultPath, `${JSON.stringify({
+      startedAt,
+      ...extra,
+      updatedAt: new Date().toISOString(),
+    }, null, 2)}\n`, 'utf8').catch(() => {});
     let installer = '';
     let rollbackInstaller = '';
     try {
+      await writeResult({ state: 'preparing', message: '正在准备更新…' });
+      await writeFile(join(updatesDir, 'active-run.json'), `${JSON.stringify({ run: stamp, resultPath, startedAt }, null, 2)}\n`, 'utf8');
+      await launchProgressWindow(resultPath, snapshot.exe);
       if (snapshot.core.update) {
         if (!snapshot.core.installerUrl) throw new Error('官方 feed 没有安装包地址');
-        installer = await downloadVerified(snapshot.core.installerUrl, join(runDir, 'installer.exe'));
+        installer = await downloadVerified(snapshot.core.installerUrl, join(runDir, 'installer.exe'), ({ received, total, percent }) => {
+          void writeResult({
+            state: 'downloading-core',
+            message: '正在下载核心安装包…',
+            received, total, percent,
+          });
+        });
         const rollbackUrl = desktopInstallerUrl(snapshot.current);
         if (rollbackUrl) {
           try {
-            rollbackInstaller = await downloadVerified(rollbackUrl, join(rollbackDir, 'installer.exe'));
+            rollbackInstaller = await downloadVerified(rollbackUrl, join(rollbackDir, 'installer.exe'), ({ received, total, percent }) => {
+              void writeResult({
+                state: 'downloading-rollback',
+                message: '正在下载回滚安装包…',
+                received, total, percent,
+              });
+            });
           } catch {
             // A local/unsigned build may not have an official rollback installer.
             // Continue, but expose that the core rollback point is unavailable.
@@ -192,7 +281,7 @@ export function mountRoutes(webServer, config = {}) {
       });
       await writeFile(planPath, `${JSON.stringify(snapshot.plan, null, 2)}\n`, 'utf8');
       await writeFile(statePath, `${JSON.stringify({ run: stamp, coreRollback: rollbackInstaller || null }, null, 2)}\n`, 'utf8');
-      await writeFile(resultPath, `${JSON.stringify({ state: 'starting', message: '正在启动更新…', startedAt: new Date().toISOString() }, null, 2)}\n`, 'utf8');
+      await writeResult({ state: 'starting', message: '正在启动更新…' });
       await writeLastPlan(paths, stamp, snapshot.plan);
       await spawnHelper([
         '--exe', snapshot.exe,
@@ -207,6 +296,10 @@ export function mountRoutes(webServer, config = {}) {
       return { accepted: true, resultPath, runDir, run: stamp };
     } catch (error) {
       running = false;
+      await writeResult({
+        state: 'failed',
+        message: `更新准备失败：${error instanceof Error ? error.message : String(error)}`,
+      });
       throw error;
     }
   }
@@ -225,7 +318,10 @@ export function mountRoutes(webServer, config = {}) {
     const runDir = join(updatesDir, stamp);
     await mkdir(runDir, { recursive: true });
     const resultPath = join(runDir, 'result.json');
-    await writeFile(resultPath, `${JSON.stringify({ state: 'starting', message: '正在回滚…', startedAt: new Date().toISOString() }, null, 2)}\n`, 'utf8');
+    const startedAt = new Date().toISOString();
+    await writeFile(resultPath, `${JSON.stringify({ state: 'starting', message: '正在回滚…', startedAt }, null, 2)}\n`, 'utf8');
+    await writeFile(join(updatesDir, 'active-run.json'), `${JSON.stringify({ run: stamp, resultPath, startedAt }, null, 2)}\n`, 'utf8');
+    await launchProgressWindow(resultPath, targetExe);
     await spawnHelper([
       '--exe', targetExe,
       '--profile', paths.profileDir,
@@ -367,7 +463,7 @@ export async function apply(ctx, config = {}) {
   const paths = defaultPaths(config);
   await writeHeartbeat(paths, {
     pid: process.pid,
-    version: '0.2.7',
+    version: '0.2.9',
     state: 'loaded',
   }).catch(() => {});
   ctx.inject(['webServer'], (host) => {

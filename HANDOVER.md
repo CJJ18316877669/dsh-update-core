@@ -1,7 +1,7 @@
 # DeepSeek Harness 一键更新器 · 交接文档
 
 > 更新时间：2026-11-09（UTC+8）
-> 当前版本：`dsh-update-core@0.3.8`；测试 123 项；仅支持 Windows；含 Desktop DSH 一键更新插件
+> 当前版本：`dsh-update-core@0.3.10`；测试 123 项；仅支持 Windows；含 Desktop DSH 一键更新插件
 > 仓库：https://github.com/CJJ18316877669/dsh-update-core
 > 项目根目录：`C:\Users\18316\Desktop\DeepSeek-Harness-一键更新方案`
 

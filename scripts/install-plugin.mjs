@@ -2,7 +2,8 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { findDesktopExe } from '../plugin/lib/plan.mjs';
 
 const args = process.argv.slice(2);
 const get = (name, fallback) => {
@@ -22,17 +23,22 @@ if (!existsSync(packageFile)) {
 }
 const pkg = JSON.parse(await readFile(packageFile, 'utf8'));
 
-function findCli() {
+async function findCli() {
   const explicit = get('cli', process.env.DSH_CLI);
   if (explicit && existsSync(explicit)) return explicit;
   const candidates = [
     'C:\\DeepSeek Harness\\resources\\runtime\\cli\\bin\\dsh.cmd',
     join(process.env.LOCALAPPDATA || '', 'Programs', 'DeepSeek Harness', 'resources', 'runtime', 'cli', 'bin', 'dsh.cmd'),
   ];
+  const desktop = await findDesktopExe().catch(() => null);
+  if (desktop) {
+    const custom = join(dirname(desktop), 'resources', 'runtime', 'cli', 'bin', 'dsh.cmd');
+    if (existsSync(custom)) return custom;
+  }
   return candidates.find((candidate) => existsSync(candidate)) || null;
 }
 
-const cli = findCli();
+const cli = await findCli();
 if (!cli) {
   console.error('dsh CLI not found; pass --cli <path to dsh.cmd>');
   process.exit(2);

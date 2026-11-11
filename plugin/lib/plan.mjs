@@ -309,7 +309,7 @@ export async function resolveGithubVersions(repo, expectedName, token, cacheFile
   const fallback = cached?.value || stored?.value || null;
   const headers = {
     accept: 'application/vnd.github+json',
-    'user-agent': 'dsh-update-core-plugin/0.2.6',
+    'user-agent': 'dsh-update-core-plugin/0.2.7',
     'x-github-api-version': '2022-11-28',
     ...(stored?.etag ? { 'if-none-match': stored.etag } : {}),
     ...(token ? { authorization: `Bearer ${token}` } : {}),
@@ -355,7 +355,7 @@ export async function resolveGithubVersions(repo, expectedName, token, cacheFile
   for (const entry of refs.slice(0, 12)) {
     try {
       const raw = await fetch(`https://raw.githubusercontent.com/${repo}/${encodeURIComponent(entry.ref)}/package.json`, {
-        signal: AbortSignal.timeout(15000), headers: { 'user-agent': 'dsh-update-core-plugin/0.2.6' },
+        signal: AbortSignal.timeout(15000), headers: { 'user-agent': 'dsh-update-core-plugin/0.2.7' },
       });
       if (!raw.ok) continue;
       const manifest = await raw.json();
@@ -398,9 +398,37 @@ export async function buildPlan({ profileDir, targetCore, registry, ignored = ne
   return createPluginPlan(dependencies, manifests, available, targetCore, bundles, { ignored, github });
 }
 
+let desktopInfoCache = { at: 0, value: null };
+
+async function queryDesktopInfo() {
+  if (desktopInfoCache.value && Date.now() - desktopInfoCache.at < 5_000) {
+    return desktopInfoCache.value;
+  }
+  const script = [
+    "$roots=@('HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*','HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*','HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*')",
+    "$items=@(Get-ItemProperty $roots -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like 'DeepSeek Harness*' })",
+    "$proc=Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'DeepSeek Harness' } | Select-Object -First 1",
+    "$exe=$null; $version=$null",
+    "if($proc){ try { if($proc.Path){$exe=$proc.Path} } catch {} }",
+    "foreach($p in $items){ if(-not $version -and $p.DisplayVersion){$version=$p.DisplayVersion}; $candidates=@(); if($p.DisplayIcon){$candidates += (($p.DisplayIcon -replace ',\\d+$','').Trim('\"'))}; if($p.InstallLocation){$candidates += (Join-Path $p.InstallLocation 'DeepSeek Harness.exe')}; foreach($c in $candidates){ if(-not $exe -and (Test-Path -LiteralPath $c)){$exe=$c} } }",
+    "[pscustomobject]@{exe=$exe;version=$version} | ConvertTo-Json -Compress",
+  ].join('; ');
+  const found = await new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-Command', script], { windowsHide: true }, (error, stdout) => {
+      if (error) return resolve(null);
+      try { resolve(JSON.parse(stdout.trim())); } catch { resolve(null); }
+    });
+  });
+  const value = found && typeof found === 'object' ? found : null;
+  desktopInfoCache = { at: Date.now(), value };
+  return value;
+}
+
 export async function findDesktopExe() {
   const explicit = process.env.DSH_DESKTOP_EXE;
   if (explicit && existsSync(explicit)) return explicit;
+  const info = await queryDesktopInfo();
+  if (info?.exe && existsSync(info.exe)) return info.exe;
   const candidates = [
     'C:\\DeepSeek Harness\\DeepSeek Harness.exe',
     join(process.env.LOCALAPPDATA || '', 'Programs', 'DeepSeek Harness', 'DeepSeek Harness.exe'),
@@ -408,13 +436,7 @@ export async function findDesktopExe() {
   for (const candidate of candidates) {
     if (candidate && existsSync(candidate)) return candidate;
   }
-  const script = "$p=Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*' -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -eq 'DeepSeek Harness' } | Select-Object -First 1; if($p){Join-Path $p.InstallLocation 'DeepSeek Harness.exe'}";
-  const found = await new Promise((resolve) => {
-    execFile('powershell.exe', ['-NoProfile', '-Command', script], { windowsHide: true }, (error, stdout) => {
-      resolve(error ? '' : stdout.trim());
-    });
-  });
-  return found && existsSync(found) ? found : null;
+  return null;
 }
 
 export async function readProductVersion(exe) {
@@ -429,14 +451,8 @@ export async function readProductVersion(exe) {
 }
 
 export async function readDesktopVersion(exe) {
-  const script = "$p=Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*' -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -eq 'DeepSeek Harness' } | Select-Object -First 1; if($p){$p.DisplayVersion}";
-  const registry = await new Promise((resolve) => {
-    execFile('powershell.exe', ['-NoProfile', '-Command', script], {
-      windowsHide: true,
-      env: { ...process.env, DSH_DESKTOP_EXE: exe },
-    }, (error, stdout) => resolve(error ? '' : stdout.trim()));
-  });
-  if (registry && parse(registry)) return registry;
+  const info = await queryDesktopInfo();
+  if (info?.version && parse(info.version)) return info.version;
   const product = await readProductVersion(exe);
   const match = product.match(/^(\d+\.\d+\.\d+)/);
   return match ? match[1] : product;

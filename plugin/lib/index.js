@@ -367,7 +367,7 @@ export async function apply(ctx, config = {}) {
   const paths = defaultPaths(config);
   await writeHeartbeat(paths, {
     pid: process.pid,
-    version: '0.2.6',
+    version: '0.2.7',
     state: 'loaded',
   }).catch(() => {});
   ctx.inject(['webServer'], (host) => {

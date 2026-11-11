@@ -5,7 +5,7 @@
 > 适用：DeepSeek Harness（`dsh`）0.2.x，Cordis「一切皆插件」架构
 > 目标：一个按钮完成 Harness 版本更新，并保证现有插件在新版本上仍可加载；失败可回滚，结果可解释。
 
-**当前状态：`dsh-update-core@0.3.7` 可运行、可测试、可复用，仅支持 Windows。** 123 项自动化测试通过；已提供 Desktop 设置页 DSH 插件，可一键更新核心与兼容插件；已覆盖真实 `cordis.patch.yml` 禁用/逐字节恢复、staging 启动门控、原子切换、独立 watchdog、跨平台路径与进程树、默认关闭的遥测上报、真实 registry SRI 冒烟，以及 live 原型。真实 Node 24 + dsh staging 与 Windows Desktop 签名/启动证据见 `docs/REAL_ACCEPTANCE.md`。
+**当前状态：`dsh-update-core@0.3.8` 可运行、可测试、可复用，仅支持 Windows。** 123 项自动化测试通过；已提供 Desktop 设置页 DSH 插件，可一键更新核心与兼容插件；已覆盖真实 `cordis.patch.yml` 禁用/逐字节恢复、staging 启动门控、原子切换、独立 watchdog、跨平台路径与进程树、默认关闭的遥测上报、真实 registry SRI 冒烟，以及 live 原型。真实 Node 24 + dsh staging 与 Windows Desktop 签名/启动证据见 `docs/REAL_ACCEPTANCE.md`。
 
 ---
 
@@ -27,6 +27,8 @@ cd dsh-update-core
 ```text
 设置 → 一键更新
 ```
+
+Desktop 的定位不依赖固定安装目录：会读取运行中的进程路径、卸载项的 `InstallLocation` / `DisplayIcon`，并兼容 `DeepSeek Harness 0.2.1-rc.5` 这类带版本号的 DisplayName，因此自定义安装目录也能识别。
 
 页面会显示当前核心、官方最新核心，以及每个插件的处置：
 

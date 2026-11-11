@@ -2,7 +2,7 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
-## [0.3.7] - 2026-11-11
+## [0.3.8] - 2026-11-11
 
 ### Added
 
@@ -16,6 +16,8 @@ All notable changes are documented here. This project follows Semantic Versionin
 - Helper now runs from the bundled `node.exe`, so the official NSIS installer no longer mistakes the helper image for a running Harness process.
 - Desktop shutdown now uses per-PID `taskkill`, avoiding PowerShell `Path` access failures.
 - Core rollback was validated end-to-end through `/api/rollback`: `coreRolledBack: true`, `coreVersion: 0.2.1.0`, `appHealthy: true`; the machine was then restored to `0.2.2-rc.1`.
+- Desktop discovery now uses the running process path, wildcard uninstall entries, `InstallLocation` and `DisplayIcon`, so custom install paths such as `C:\Users\<user>\Desktop\hao` are supported.
+- `npm run plugin:install` also derives the CLI path from the discovered Desktop installation.
 - Update history UI and `/api/history` (last 30 runs).
 - GitHub release/tag resolution for `git+https`, `github:` and `owner/repo` dependencies.
 - Repository consistency guard for registry and GitHub updates (`repository-mismatch`).

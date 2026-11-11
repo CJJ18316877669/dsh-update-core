@@ -1,6 +1,6 @@
 # 暂停交接：Desktop 插件问题定位与补全
 
-> **2026-11-11 09:05 续作完成**：核心回滚已通过插件 API 端到端实测，Desktop 已恢复 `0.2.2-rc.1`，测试包已清理。以第 0 节为准；第 1-6 节保留为暂停时的历史记录。
+> **2026-11-11 09:10 续作完成**：核心回滚已通过插件 API 端到端实测，Desktop 已恢复 `0.2.2-rc.1`，测试包已清理。以第 0 节为准；第 1-6 节保留为暂停时的历史记录。
 
 ## 0. 续作结果（覆盖下文旧状态）
 
@@ -17,6 +17,8 @@
 | 回滚结果 | `coreRolledBack: true`，`coreVersion: 0.2.1.0`，`profileRestored: true`，`appHealthy: true` |
 | 回滚后恢复 | 已用 `new.exe /S --updated` 恢复 `0.2.2.0` / `0.2.2-rc.1` |
 | GitHub 304 | ✓ 带缓存的 ETag 请求返回 `304` |
+| `autoApply: true` | ✓ 隔离 profile 中自动触发更新（无人工点击） |
+| 自动触发证据 | 运行 `2026-11-11T01-07-07-413Z`，自动识别 `dsh-context 0.81.0 → 0.83.1` |
 | 测试安装包 | 557 MB 的 `old.exe` / `new.exe` 已删除 |
 | `core-state.json` | 已删除，回滚按钮回到禁用 |
 | 无效历史 | 已删除卡在 `starting` 的 00:46 运行 |
@@ -33,9 +35,17 @@
 
 修复后，插件 UI → `/api/rollback` → 关闭 Desktop → 旧安装包降级到 `0.2.1.0` → 恢复 profile → 启动并心跳确认，全链路成功。
 
-### 仍未做的唯一验证
+### autoApply 隔离验证
 
-`autoApply: true` 没有在主 Desktop profile 上做真实触发，因为它会未经人工确认关闭应用。建议在隔离 profile 或可中断环境中验证；默认仍为 `false`。
+已使用独立 `DSH_HOME`、独立 `autotest` profile 和替身 Desktop 可执行文件验证：
+
+- 配置 `autoApply: true`、`autoCheckHours: 1`；
+- 等待后台 tick 后，无需点击任何按钮，自动创建运行目录并启动更新；
+- 自动检测目标：`dsh-context 0.81.0 → 0.83.1`；
+- 运行 ID：`2026-11-11T01-07-07-413Z`；
+- 该合成 profile 不包含 pnpm runtime，helper 在安装阶段因 `pnpm.cjs` 缺失而按设计进入回滚；这证明自动触发链路已执行，但不等同于在真实 profile 上完成一次自动安装。主 Desktop profile 全程未触碰。
+
+默认 `autoApply` 仍保持 `false`；真实启用前应确认用户接受自动关闭/重启。
 
 ---
 
@@ -93,7 +103,7 @@
 - **根因**：这是原先刻意采用的安全默认值，避免后台自动关闭应用。
 - **修复**：新增 `autoApply` 配置，默认 `false`。`autoCheckHours > 0` 时定时执行 `status(true)`；若 `autoApply: true` 且发现更新，则调用与按钮相同的 `startUpdate()`。UI 元信息显示“自动安装已开启/关闭”。
 - **验证**：API 状态返回 `autoApply: false`，设置页显示“自动检查每 6 小时 · 自动安装关闭”。为安全起见，没有在用户主 profile 上开启 `true`。
-- **继续时**：应在隔离 profile 或可中断环境验证 `autoApply: true`，不要在默认 Desktop profile 直接开启。
+- **后续验证**：`autoApply: true` 已在隔离 profile 自动触发成功；真实 Desktop 默认仍保持关闭。
 
 ### 2.4 GitHub API 每小时 60 次限额
 
@@ -141,7 +151,7 @@
 
 ## 5. 后续仅剩事项
 
-1. 在隔离 profile 验证 `autoApply: true`；默认 Desktop profile 保持 `false`。
+1. `autoApply: true` 已在隔离 profile 验证触发；默认 Desktop profile 保持 `false`。
 2. 若继续修改插件代码，先递增 `plugin/package.json` 版本，再运行 `npm run plugin:install`。
 3. GitHub ETag/304 已用真实缓存请求验证；无需重复。
 4. `.acceptance/core-rollback/*.exe` 已清理，不要再下载旧安装包，除非重新做核心回滚演练。

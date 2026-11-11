@@ -309,7 +309,7 @@ export async function resolveGithubVersions(repo, expectedName, token, cacheFile
   const fallback = cached?.value || stored?.value || null;
   const headers = {
     accept: 'application/vnd.github+json',
-    'user-agent': 'dsh-update-core-plugin/0.2.1',
+    'user-agent': 'dsh-update-core-plugin/0.2.6',
     'x-github-api-version': '2022-11-28',
     ...(stored?.etag ? { 'if-none-match': stored.etag } : {}),
     ...(token ? { authorization: `Bearer ${token}` } : {}),
@@ -355,7 +355,7 @@ export async function resolveGithubVersions(repo, expectedName, token, cacheFile
   for (const entry of refs.slice(0, 12)) {
     try {
       const raw = await fetch(`https://raw.githubusercontent.com/${repo}/${encodeURIComponent(entry.ref)}/package.json`, {
-        signal: AbortSignal.timeout(15000), headers: { 'user-agent': 'dsh-update-core-plugin/0.2.1' },
+        signal: AbortSignal.timeout(15000), headers: { 'user-agent': 'dsh-update-core-plugin/0.2.6' },
       });
       if (!raw.ok) continue;
       const manifest = await raw.json();

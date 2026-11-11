@@ -2,7 +2,7 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
-## [0.3.2] - 2026-11-10
+## [0.3.7] - 2026-11-11
 
 ### Added
 
@@ -13,6 +13,9 @@ All notable changes are documented here. This project follows Semantic Versionin
 - Per-plugin exact-version ignore/clear (`/api/ignore`).
 - GitHub API ETag + persistent disk cache and token support to avoid rate-limit failures.
 - `npm run plugin:install` force-refreshes a stale `file:` plugin directory.
+- Helper now runs from the bundled `node.exe`, so the official NSIS installer no longer mistakes the helper image for a running Harness process.
+- Desktop shutdown now uses per-PID `taskkill`, avoiding PowerShell `Path` access failures.
+- Core rollback was validated end-to-end through `/api/rollback`: `coreRolledBack: true`, `coreVersion: 0.2.1.0`, `appHealthy: true`; the machine was then restored to `0.2.2-rc.1`.
 - Update history UI and `/api/history` (last 30 runs).
 - GitHub release/tag resolution for `git+https`, `github:` and `owner/repo` dependencies.
 - Repository consistency guard for registry and GitHub updates (`repository-mismatch`).

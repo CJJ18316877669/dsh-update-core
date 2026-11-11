@@ -1,5 +1,44 @@
 # 暂停交接：Desktop 插件问题定位与补全
 
+> **2026-11-11 09:05 续作完成**：核心回滚已通过插件 API 端到端实测，Desktop 已恢复 `0.2.2-rc.1`，测试包已清理。以第 0 节为准；第 1-6 节保留为暂停时的历史记录。
+
+## 0. 续作结果（覆盖下文旧状态）
+
+| 项 | 结果 |
+|---|---|
+| 最终 Desktop | exe `0.2.2.0`，注册表 `0.2.2-rc.1`，应用关闭 |
+| 更新插件 | `dsh-update-core-plugin@0.2.6` |
+| 项目版本 | `0.3.7` |
+| 列表插件 | `dsh-context@0.83.1`，`dsh-skill-mcp-panel@2.3.12` |
+| 当前计划 | 0 个更新 / 15 个保持 |
+| 更新历史 | 12 条 |
+| 测试 | 123/123 |
+| 核心回滚端到端 | ✓ 运行 `2026-11-11T00-50-17-385Z` |
+| 回滚结果 | `coreRolledBack: true`，`coreVersion: 0.2.1.0`，`profileRestored: true`，`appHealthy: true` |
+| 回滚后恢复 | 已用 `new.exe /S --updated` 恢复 `0.2.2.0` / `0.2.2-rc.1` |
+| GitHub 304 | ✓ 带缓存的 ETag 请求返回 `304` |
+| 测试安装包 | 557 MB 的 `old.exe` / `new.exe` 已删除 |
+| `core-state.json` | 已删除，回滚按钮回到禁用 |
+| 无效历史 | 已删除卡在 `starting` 的 00:46 运行 |
+
+### 核心回滚失败过的真正原因
+
+前几次 `/api/rollback` 都返回 `installer-exit-2`。根因不是安装包损坏，也不是版本降级被禁止：
+
+1. helper 最初以 `DeepSeek Harness.exe` 映像运行；
+2. 官方 NSIS 安装器启动时检查到“仍有 `DeepSeek Harness.exe` 在运行”（实际是 helper 自己），于是以 exit 2 退出；
+3. 手动用 `node.exe` 运行同一个 helper 时能成功降级，验证了这个判断；
+4. 最终修复：helper 改用 Desktop 自带的
+   `resources/runtime/primary-runtime/dependencies/node/bin/node.exe` 运行；同时 `closeDesktop()` 改为按 PID 逐个 `taskkill`，不再依赖 PowerShell 的进程 Path 判断。
+
+修复后，插件 UI → `/api/rollback` → 关闭 Desktop → 旧安装包降级到 `0.2.1.0` → 恢复 profile → 启动并心跳确认，全链路成功。
+
+### 仍未做的唯一验证
+
+`autoApply: true` 没有在主 Desktop profile 上做真实触发，因为它会未经人工确认关闭应用。建议在隔离 profile 或可中断环境中验证；默认仍为 `false`。
+
+---
+
 > 暂停时间：2026-11-10 11:40 GMT+8  
 > 状态：**任务暂停，但当前机器已恢复到安全可启动状态**  
 > 当前提交：`2724192 feat: harden plugin refresh, auto-apply and GitHub caching`  
@@ -46,7 +85,7 @@
   4. 点击取消忽略后恢复 `1 个更新 / 14 个保持`；
   5. 随后执行真实一键更新，把 `dsh-context` 升回 `0.83.1`，结果 `succeeded`，应用启动心跳确认健康；
   6. 再执行“回滚上一版本”，恢复到 `0.81.0`，结果 `rolled-back`、`profileRestored: true`、`appHealthy: true`；
-  6. 最后手动恢复到 `0.83.1`，清理测试回滚点和忽略状态。
+  7. 最后手动恢复到 `0.83.1`，清理测试回滚点和忽略状态。
 - **结论**：忽略/取消忽略、真实插件更新、静态健康检查、启动心跳、手动插件回滚均已实机通过。
 
 ### 2.3 定时检查只刷新状态，不会静默安装
@@ -100,18 +139,12 @@
 
 这两个 exe 合计约 557 MB，继续完成核心回滚端到端验证前不要删除；完成后可清理。
 
-## 5. 继续时的建议顺序
+## 5. 后续仅剩事项
 
-1. 正常启动 Desktop，进入 `设置 → 一键更新`，确认 0 更新 / 15 保持、回滚按钮禁用、历史 6 条。
-2. 构造一个明确的测试回滚点：
-   - `core-state.json` 指向已验签的 `old.exe`；
-   - `rollbackPackage` 指向当前 profile 清单备份；
-   - 通过 UI 点击“回滚上一版本”；
-   - 预期结果 `rolled-back`、`coreRolledBack: true`、`appHealthy: true`。
-3. 验证后立刻运行 `new.exe /S --updated` 恢复 `0.2.2-rc.1`，并确认注册表 `DisplayVersion` 为 `0.2.2-rc.1`。
-4. 在隔离环境验证 `autoApply: true` 与 GitHub 304 缓存分支。
-5. 若继续修改插件代码，先递增 `plugin/package.json` 版本，再运行 `npm run plugin:install`。
-6. 最后删除 `.acceptance/core-rollback/*.exe` 或归档到外部位置。
+1. 在隔离 profile 验证 `autoApply: true`；默认 Desktop profile 保持 `false`。
+2. 若继续修改插件代码，先递增 `plugin/package.json` 版本，再运行 `npm run plugin:install`。
+3. GitHub ETag/304 已用真实缓存请求验证；无需重复。
+4. `.acceptance/core-rollback/*.exe` 已清理，不要再下载旧安装包，除非重新做核心回滚演练。
 
 ## 6. 已知非回归项
 

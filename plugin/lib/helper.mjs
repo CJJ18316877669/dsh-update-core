@@ -58,19 +58,32 @@ function launchDesktop() {
   spawn(exe, [], { detached: true, stdio: 'ignore', windowsHide: true, env }).unref();
 }
 
+async function desktopPids() {
+  const image = `${exe.split(/[\\/]/).pop()}`;
+  const listing = await run('tasklist', ['/FI', `IMAGENAME eq ${image}`, '/FO', 'CSV', '/NH']);
+  const pids = [];
+  for (const line of listing.stdout.split(/\r?\n/)) {
+    const fields = line.split('","').map((part) => part.replace(/^"|"$/g, ''));
+    const pid = Number(fields[1]);
+    if (Number.isInteger(pid) && pid > 0) pids.push(pid);
+  }
+  return pids;
+}
+
 async function closeDesktop() {
-  const ps = [
-    `$exe = '${exe.replace(/'/g, "''")}'`,
-    `$self = ${process.pid}`,
-    `$targets = @(Get-Process | Where-Object { $_.Path -eq $exe -and $_.Id -ne $self })`,
-    `if ($targets.Count -eq 0) { exit 0 }`,
-    `$targets | Where-Object { $_.MainWindowHandle -ne 0 } | ForEach-Object { [void]$_.CloseMainWindow() }`,
-    `Start-Sleep -Seconds 8`,
-    `$left = @(Get-Process | Where-Object { $_.Path -eq $exe -and $_.Id -ne $self })`,
-    `if ($left.Count -gt 0) { $left | Stop-Process -Force -ErrorAction SilentlyContinue }`,
-    `exit 0`,
-  ].join('; ');
-  return run('powershell.exe', ['-NoProfile', '-Command', ps]);
+  const deadline = Date.now() + 40_000;
+  while (Date.now() < deadline) {
+    const pids = (await desktopPids()).filter((pid) => pid !== process.pid);
+    if (pids.length === 0) return { code: 0, stdout: '', stderr: '' };
+    for (const pid of pids) {
+      await run('taskkill', ['/F', '/PID', String(pid)]);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  const left = (await desktopPids()).filter((pid) => pid !== process.pid);
+  return left.length === 0
+    ? { code: 0, stdout: '', stderr: '' }
+    : { code: 1, stdout: '', stderr: `still running: ${left.join(',')}` };
 }
 
 async function productVersion() {
@@ -192,11 +205,21 @@ async function restorePackage() {
 }
 
 async function rollbackCore() {
-  if (!rollbackInstaller || !existsSync(rollbackInstaller)) return false;
-  await closeDesktop();
+  if (!rollbackInstaller || !existsSync(rollbackInstaller)) {
+    return { ok: false, reason: 'no-rollback-installer' };
+  }
+  const closed = await closeDesktop();
+  if (closed.code !== 0) {
+    return { ok: false, reason: 'close-desktop-failed', detail: (closed.stderr || '').slice(-1000) };
+  }
   const installed = await run(rollbackInstaller, ['/S', '--updated']);
-  if (installed.code !== 0) return false;
-  return Boolean(await waitVersion(rollbackVersion || ''));
+  if (installed.code !== 0) {
+    return { ok: false, reason: `installer-exit-${installed.code}`, detail: (installed.stderr || installed.stdout).slice(-1000) };
+  }
+  const version = await waitVersion(rollbackVersion || '');
+  if (!version) return { ok: false, reason: 'rollback-version-not-observed' };
+  result.coreVersion = version;
+  return { ok: true, version };
 }
 
 async function failWithRollback(message, detail = '') {
@@ -208,8 +231,11 @@ async function failWithRollback(message, detail = '') {
   }
   await save({ state: 'rolling-back', message: `更新失败，正在回滚：${message}`, detail });
   let coreRolledBack = false;
+  let coreRollbackDetail = null;
   if (rollbackInstaller && existsSync(rollbackInstaller)) {
-    coreRolledBack = await rollbackCore();
+    const core = await rollbackCore();
+    coreRolledBack = core.ok === true;
+    if (!core.ok) coreRollbackDetail = core;
   }
   const profileRestored = await restorePackage();
   const startedAt = Date.now();
@@ -222,6 +248,7 @@ async function failWithRollback(message, detail = '') {
     detail,
     rolledBack: coreRolledBack || profileRestored,
     coreRolledBack,
+    coreRollbackDetail,
     profileRestored,
     appHealthy: healthy,
   });
@@ -232,15 +259,16 @@ async function rollbackOnly() {
   await save({ state: 'closing', message: '正在关闭 DeepSeek Harness…' });
   await closeDesktop();
   await save({ state: 'rolling-back', message: `正在回滚到 ${rollbackVersion || '上一版本'}…` });
-  const coreRolledBack = await rollbackCore();
+  const core = await rollbackCore();
   const profileRestored = await restorePackage();
   const startedAt = Date.now();
   const healthy = await launchAndVerify(startedAt);
   await save({
-    state: coreRolledBack || profileRestored ? 'rolled-back' : 'failed',
-    message: coreRolledBack || profileRestored ? '回滚完成' : '没有可用的回滚点',
-    rolledBack: coreRolledBack || profileRestored,
-    coreRolledBack,
+    state: core.ok || profileRestored ? 'rolled-back' : 'failed',
+    message: core.ok || profileRestored ? '回滚完成' : '没有可用的回滚点',
+    rolledBack: core.ok || profileRestored,
+    coreRolledBack: core.ok === true,
+    coreRollbackDetail: core.ok ? null : core,
     profileRestored,
     appHealthy: healthy,
   });

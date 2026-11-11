@@ -80,8 +80,16 @@ function pnpmPath(paths, exe) {
   return candidates.find((candidate) => existsSync(candidate)) || candidates[0];
 }
 
-function spawnHelper(args) {
-  const child = spawn(process.execPath, [HELPER, ...args], {
+function helperExecutable(desktopExe) {
+  const bundledNode = join(dirname(desktopExe), 'resources', 'runtime', 'primary-runtime', 'dependencies', 'node', 'bin', 'node.exe');
+  if (existsSync(bundledNode)) return bundledNode;
+  if (process.execPath.toLowerCase().endsWith('node.exe')) return process.execPath;
+  return process.execPath;
+}
+
+async function spawnHelper(args, desktopExe) {
+  const runner = helperExecutable(desktopExe);
+  const child = spawn(runner, [HELPER, ...args], {
     detached: true,
     stdio: 'ignore',
     windowsHide: true,
@@ -186,7 +194,7 @@ export function mountRoutes(webServer, config = {}) {
       await writeFile(statePath, `${JSON.stringify({ run: stamp, coreRollback: rollbackInstaller || null }, null, 2)}\n`, 'utf8');
       await writeFile(resultPath, `${JSON.stringify({ state: 'starting', message: '正在启动更新…', startedAt: new Date().toISOString() }, null, 2)}\n`, 'utf8');
       await writeLastPlan(paths, stamp, snapshot.plan);
-      spawnHelper([
+      await spawnHelper([
         '--exe', snapshot.exe,
         '--profile', paths.profileDir,
         '--plan', planPath,
@@ -195,7 +203,7 @@ export function mountRoutes(webServer, config = {}) {
         '--heartbeat', join(stateDir(paths), 'heartbeat.json'),
         ...(installer ? ['--installer', installer] : []),
         ...(rollbackInstaller ? ['--rollback-installer', rollbackInstaller] : []),
-      ]);
+      ], snapshot.exe);
       return { accepted: true, resultPath, runDir, run: stamp };
     } catch (error) {
       running = false;
@@ -218,7 +226,7 @@ export function mountRoutes(webServer, config = {}) {
     await mkdir(runDir, { recursive: true });
     const resultPath = join(runDir, 'result.json');
     await writeFile(resultPath, `${JSON.stringify({ state: 'starting', message: '正在回滚…', startedAt: new Date().toISOString() }, null, 2)}\n`, 'utf8');
-    spawnHelper([
+    await spawnHelper([
       '--exe', targetExe,
       '--profile', paths.profileDir,
       '--result', resultPath,
@@ -228,7 +236,7 @@ export function mountRoutes(webServer, config = {}) {
       '--rollback-version', coreState.currentBefore,
       ...(coreState.rollbackInstaller ? ['--rollback-installer', coreState.rollbackInstaller] : []),
       '--rollback-package', coreState.rollbackPackage,
-    ]);
+    ], targetExe);
     return { accepted: true, resultPath, runDir, run: stamp };
   }
 
@@ -359,7 +367,7 @@ export async function apply(ctx, config = {}) {
   const paths = defaultPaths(config);
   await writeHeartbeat(paths, {
     pid: process.pid,
-    version: '0.2.1',
+    version: '0.2.6',
     state: 'loaded',
   }).catch(() => {});
   ctx.inject(['webServer'], (host) => {

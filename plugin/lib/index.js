@@ -1,5 +1,4 @@
 import { execFile, spawn } from 'node:child_process';
-import { createServer } from 'node:net';
 import { createWriteStream, existsSync } from 'node:fs';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -32,7 +31,6 @@ export const inject = ['webServer'];
 
 const PAGE = fileURLToPath(new URL('../public/index.html', import.meta.url));
 const HELPER = fileURLToPath(new URL('./helper.mjs', import.meta.url));
-const PROGRESS = fileURLToPath(new URL('./progress-server.mjs', import.meta.url));
 const CACHE_MS = 30_000;
 
 function send(response, status, body, type = 'application/json; charset=utf-8') {
@@ -93,43 +91,6 @@ async function downloadVerified(url, destination, onProgress) {
   return destination;
 }
 
-async function freePort() {
-  const server = createServer();
-  await new Promise((resolve, reject) => server.listen(0, '127.0.0.1', resolve).once('error', reject));
-  const port = server.address().port;
-  await new Promise((resolve) => server.close(resolve));
-  return port;
-}
-
-async function launchProgressWindow(resultPath, desktopExe) {
-  try {
-    const port = await freePort();
-    const runner = helperExecutable(desktopExe);
-    const child = spawn(runner, [PROGRESS, '--result', resultPath, '--port', String(port)], {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '' },
-    });
-    child.unref();
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const url = `http://127.0.0.1:${port}/`;
-    const edge = [
-      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-      'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-      join(process.env.LOCALAPPDATA || '', 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
-    ].find((candidate) => existsSync(candidate));
-    if (edge) {
-      spawn(edge, [`--app=${url}`, '--window-size=560,460', '--no-first-run', '--disable-features=msEdgeSidebar'], {
-        detached: true, stdio: 'ignore', windowsHide: false,
-      }).unref();
-    } else {
-      spawn('rundll32.exe', ['url.dll,FileProtocolHandler', url], { detached: true, stdio: 'ignore' }).unref();
-    }
-  } catch {
-    // The in-app progress card remains available if the external window cannot open.
-  }
-}
 
 function pnpmPath(paths, exe) {
   const candidates = [
@@ -234,74 +195,76 @@ export function mountRoutes(webServer, config = {}) {
       ...extra,
       updatedAt: new Date().toISOString(),
     }, null, 2)}\n`, 'utf8').catch(() => {});
-    let installer = '';
-    let rollbackInstaller = '';
-    try {
-      await writeResult({ state: 'preparing', message: '正在准备更新…' });
-      await writeFile(join(updatesDir, 'active-run.json'), `${JSON.stringify({ run: stamp, resultPath, startedAt }, null, 2)}\n`, 'utf8');
-      await launchProgressWindow(resultPath, snapshot.exe);
-      if (snapshot.core.update) {
-        if (!snapshot.core.installerUrl) throw new Error('官方 feed 没有安装包地址');
-        installer = await downloadVerified(snapshot.core.installerUrl, join(runDir, 'installer.exe'), ({ received, total, percent }) => {
-          void writeResult({
-            state: 'downloading-core',
-            message: '正在下载核心安装包…',
-            received, total, percent,
-          });
-        });
-        const rollbackUrl = desktopInstallerUrl(snapshot.current);
-        if (rollbackUrl) {
-          try {
-            rollbackInstaller = await downloadVerified(rollbackUrl, join(rollbackDir, 'installer.exe'), ({ received, total, percent }) => {
-              void writeResult({
-                state: 'downloading-rollback',
-                message: '正在下载回滚安装包…',
-                received, total, percent,
-              });
+    await writeResult({ state: 'preparing', message: '正在准备更新…' });
+    await writeFile(join(updatesDir, 'active-run.json'), `${JSON.stringify({ run: stamp, resultPath, startedAt }, null, 2)}\n`, 'utf8');
+
+    const prepare = async () => {
+      let installer = '';
+      let rollbackInstaller = '';
+      try {
+        if (snapshot.core.update) {
+          if (!snapshot.core.installerUrl) throw new Error('官方 feed 没有安装包地址');
+          installer = await downloadVerified(snapshot.core.installerUrl, join(runDir, 'installer.exe'), ({ received, total, percent }) => {
+            void writeResult({
+              state: 'downloading-core',
+              message: '正在下载核心安装包…',
+              received, total, percent,
             });
-          } catch {
-            // A local/unsigned build may not have an official rollback installer.
-            // Continue, but expose that the core rollback point is unavailable.
-            rollbackInstaller = '';
+          });
+          const rollbackUrl = desktopInstallerUrl(snapshot.current);
+          if (rollbackUrl) {
+            try {
+              rollbackInstaller = await downloadVerified(rollbackUrl, join(rollbackDir, 'installer.exe'), ({ received, total, percent }) => {
+                void writeResult({
+                  state: 'downloading-rollback',
+                  message: '正在下载回滚安装包…',
+                  received, total, percent,
+                });
+              });
+            } catch {
+              // A local/unsigned build may not have an official rollback installer.
+              // Continue, but expose that the core rollback point is unavailable.
+              rollbackInstaller = '';
+            }
           }
         }
+        const profilePackage = join(paths.profileDir, 'package.json');
+        await copyFile(profilePackage, join(rollbackDir, 'package.json'));
+        for (const name of ['pnpm-lock.yaml', 'package-lock.json']) {
+          try { await copyFile(join(paths.profileDir, name), join(rollbackDir, name)); } catch { /* optional */ }
+        }
+        await writeCoreState(paths, {
+          currentBefore: snapshot.current,
+          targetVersion: snapshot.plan.targetCore,
+          rollbackExe: snapshot.exe,
+          rollbackInstaller: snapshot.core.update ? (rollbackInstaller || null) : null,
+          rollbackPackage: join(rollbackDir, 'package.json'),
+          lastRun: stamp,
+        });
+        await writeFile(planPath, `${JSON.stringify(snapshot.plan, null, 2)}\n`, 'utf8');
+        await writeFile(statePath, `${JSON.stringify({ run: stamp, coreRollback: rollbackInstaller || null }, null, 2)}\n`, 'utf8');
+        await writeResult({ state: 'starting', message: '安装包已就绪，正在关闭 Desktop 并启动更新…' });
+        await writeLastPlan(paths, stamp, snapshot.plan);
+        await spawnHelper([
+          '--exe', snapshot.exe,
+          '--profile', paths.profileDir,
+          '--plan', planPath,
+          '--result', resultPath,
+          '--pnpm', pnpmPath(paths, snapshot.exe),
+          '--heartbeat', join(stateDir(paths), 'heartbeat.json'),
+          ...(installer ? ['--installer', installer] : []),
+          ...(rollbackInstaller ? ['--rollback-installer', rollbackInstaller] : []),
+        ], snapshot.exe);
+      } catch (error) {
+        running = false;
+        await writeResult({
+          state: 'failed',
+          message: `更新准备失败：${error instanceof Error ? error.message : String(error)}`,
+        });
       }
-      const profilePackage = join(paths.profileDir, 'package.json');
-      await copyFile(profilePackage, join(rollbackDir, 'package.json'));
-      for (const name of ['pnpm-lock.yaml', 'package-lock.json']) {
-        try { await copyFile(join(paths.profileDir, name), join(rollbackDir, name)); } catch { /* optional */ }
-      }
-      await writeCoreState(paths, {
-        currentBefore: snapshot.current,
-        targetVersion: snapshot.plan.targetCore,
-        rollbackExe: snapshot.exe,
-        rollbackInstaller: snapshot.core.update ? (rollbackInstaller || null) : null,
-        rollbackPackage: join(rollbackDir, 'package.json'),
-        lastRun: stamp,
-      });
-      await writeFile(planPath, `${JSON.stringify(snapshot.plan, null, 2)}\n`, 'utf8');
-      await writeFile(statePath, `${JSON.stringify({ run: stamp, coreRollback: rollbackInstaller || null }, null, 2)}\n`, 'utf8');
-      await writeResult({ state: 'starting', message: '正在启动更新…' });
-      await writeLastPlan(paths, stamp, snapshot.plan);
-      await spawnHelper([
-        '--exe', snapshot.exe,
-        '--profile', paths.profileDir,
-        '--plan', planPath,
-        '--result', resultPath,
-        '--pnpm', pnpmPath(paths, snapshot.exe),
-        '--heartbeat', join(stateDir(paths), 'heartbeat.json'),
-        ...(installer ? ['--installer', installer] : []),
-        ...(rollbackInstaller ? ['--rollback-installer', rollbackInstaller] : []),
-      ], snapshot.exe);
-      return { accepted: true, resultPath, runDir, run: stamp };
-    } catch (error) {
-      running = false;
-      await writeResult({
-        state: 'failed',
-        message: `更新准备失败：${error instanceof Error ? error.message : String(error)}`,
-      });
-      throw error;
-    }
+    };
+    void prepare();
+    return { accepted: true, resultPath, runDir, run: stamp };
   }
 
   async function startRollback() {
@@ -321,7 +284,6 @@ export function mountRoutes(webServer, config = {}) {
     const startedAt = new Date().toISOString();
     await writeFile(resultPath, `${JSON.stringify({ state: 'starting', message: '正在回滚…', startedAt }, null, 2)}\n`, 'utf8');
     await writeFile(join(updatesDir, 'active-run.json'), `${JSON.stringify({ run: stamp, resultPath, startedAt }, null, 2)}\n`, 'utf8');
-    await launchProgressWindow(resultPath, targetExe);
     await spawnHelper([
       '--exe', targetExe,
       '--profile', paths.profileDir,
@@ -463,7 +425,7 @@ export async function apply(ctx, config = {}) {
   const paths = defaultPaths(config);
   await writeHeartbeat(paths, {
     pid: process.pid,
-    version: '0.2.9',
+    version: '0.2.10',
     state: 'loaded',
   }).catch(() => {});
   ctx.inject(['webServer'], (host) => {

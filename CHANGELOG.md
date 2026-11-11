@@ -2,7 +2,7 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
-## [0.3.10] - 2026-11-11
+## [0.3.11] - 2026-11-11
 
 ### Added
 
@@ -18,8 +18,8 @@ All notable changes are documented here. This project follows Semantic Versionin
 - Core rollback was validated end-to-end through `/api/rollback`: `coreRolledBack: true`, `coreVersion: 0.2.1.0`, `appHealthy: true`; the machine was then restored to `0.2.2-rc.1`.
 - Desktop discovery now uses the running process path, wildcard uninstall entries, `InstallLocation` and `DisplayIcon`, so custom install paths such as `C:\Users\<user>\Desktop\hao` are supported.
 - `npm run plugin:install` also derives the CLI path from the discovered Desktop installation.
-- Update progress is now visible throughout the whole workflow: live download percentage in Settings, plus a standalone local progress window that stays open while Desktop is closed.
-- An `active-run.json` marker restores the in-progress view after the Desktop restarts.
+- Update progress is now built into the Settings UI: the update request returns immediately and the page polls live download percentage, transferred size and stages.
+- An `active-run.json` marker restores the in-progress view after the Desktop restarts; no external browser progress window is used.
 - Update history UI and `/api/history` (last 30 runs).
 - GitHub release/tag resolution for `git+https`, `github:` and `owner/repo` dependencies.
 - Repository consistency guard for registry and GitHub updates (`repository-mismatch`).

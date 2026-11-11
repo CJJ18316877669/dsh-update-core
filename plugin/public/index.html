@@ -69,6 +69,9 @@
 </div>
 <div class="card" id="progressCard" hidden>
   <h1 style="font-size:16px">更新进度</h1>
+  <div style="height:10px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin:10px 0">
+    <div id="progressBar" style="height:100%;width:0;background:#2563eb;transition:width .3s"></div>
+  </div>
   <pre id="progress"></pre>
 </div>
 <script>
@@ -112,6 +115,12 @@
       ? ` ${Math.round(result.percent)}%` : '';
     const size = result.total ? ` (${(result.total / 1024 / 1024).toFixed(1)} MB)` : '';
     $('progress').textContent = `${stage}${percent}${size}\n${result.message || ''}\n最后更新：${result.updatedAt || '—'}`;
+    const bar = $('progressBar');
+    if (bar) {
+      const pctValue = typeof result.percent === 'number' && result.percent >= 0 ? Math.min(100, result.percent) : null;
+      bar.style.width = pctValue === null ? '35%' : pctValue + '%';
+      bar.style.background = pctValue === null ? '#93c5fd' : '#2563eb';
+    }
   }
 
   function startPolling(run) {
@@ -198,6 +207,7 @@
     if (!ok) return;
     $('update').disabled = true;
     $('progressCard').hidden = false;
+    $('progressCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     $('progress').textContent = '正在启动更新…';
     try {
       const response = await fetch('/dsh-update/api/update', {

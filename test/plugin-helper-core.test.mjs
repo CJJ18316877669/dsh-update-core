@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   decideRollbackOutcome,
+  desktopKillArgs,
   normalizeProductVersion,
   rollbackMessage,
   startupLogFailures,
@@ -38,6 +39,12 @@ test('helper startup log: a bundle rejected by the dsh compatibility gate fails 
   ].join('\n'));
   assert.equal(failures.length, 1);
   assert.match(failures[0], /skipping profile bundle/);
+});
+
+test('helper forced close: never kills the Desktop process tree that hosts the update', () => {
+  assert.deepEqual(desktopKillArgs(4242), ['/F', '/PID', '4242']);
+  assert.equal(desktopKillArgs(4242).includes('/T'), false);
+  assert.equal(desktopKillArgs(4242).includes('-T'), false);
 });
 
 test('helper version verification: ProductVersion fallback is normalised but prereleases stay exact', () => {

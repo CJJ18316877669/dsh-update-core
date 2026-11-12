@@ -23,6 +23,21 @@ export function versionMatches(actualVersion, expectedVersion) {
 }
 
 /**
+ * Arguments for the forced close of one Desktop process.
+ *
+ * `/T` must never be used here: the update supervisor and helper are spawned by
+ * the Desktop host, so they are descendants of the Desktop process. A tree kill
+ * terminates the update itself and leaves the run stuck in `closing` with a
+ * stale lock. Every Desktop process shares the same executable, so the caller
+ * already enumerates and kills them one by one.
+ * @param {number} pid
+ * @returns {string[]}
+ */
+export function desktopKillArgs(pid) {
+  return ['/F', '/PID', String(pid)];
+}
+
+/**
  * A run is rolled back only when every mutation was reversed AND the restarted
  * application is healthy. "Core or profile succeeded" is not enough.
  */

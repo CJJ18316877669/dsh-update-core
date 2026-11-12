@@ -2,6 +2,18 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
+## [0.3.16] - 2026-11-12
+
+### Fixed
+
+- Forced close no longer kills the update itself. When the Desktop ignored the graceful close, `closeDesktop()` ran `taskkill /F /T` on every remaining Desktop process; the update supervisor and helper are spawned by the Desktop host, so the tree kill terminated them and the run stopped at `closing` with a stale lock and no terminal result. Each enumerated Desktop process is now killed by PID without `/T`, which keeps the supervisor alive while still closing the app.
+- Confirmed the failure mode with a controlled three-level process tree: `taskkill /F /T` also terminates detached grandchildren, so a tree kill can never be used while the updater lives under the Desktop process.
+- Bumped the Desktop plugin to `0.2.15`.
+
+### Tests
+
+- Added a regression test that pins the forced-close arguments to `/F /PID <pid>` and rejects `/T`; **161/161** pass.
+
 ## [0.3.15] - 2026-11-12
 
 ### Fixed

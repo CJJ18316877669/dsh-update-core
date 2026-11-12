@@ -9,6 +9,7 @@ import {
 import { readJson, writeJson } from './store.mjs';
 import {
   decideRollbackOutcome,
+  desktopKillArgs,
   normalizeProductVersion,
   rollbackMessage,
   startupLogFailures,
@@ -240,7 +241,7 @@ async function closeDesktop() {
   if (graceful.pids.length === 0) return { code: 0, stdout: '', stderr: '' };
 
   for (const pid of graceful.pids) {
-    await run('taskkill', ['/F', '/T', '/PID', String(pid)], { timeoutMs: 20_000 });
+    await run('taskkill', desktopKillArgs(pid), { timeoutMs: 20_000 });
   }
   const forced = await waitForDesktopExit(Math.max(5_000, CLOSE_TIMEOUT_MS - 10_000));
   if (!forced.ok) return { code: 1, stderr: forced.error };

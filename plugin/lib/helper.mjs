@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { closeSync, existsSync, openSync } from 'node:fs';
 import { readFile, unlink } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,7 @@ import {
   decideRollbackOutcome,
   normalizeProductVersion,
   rollbackMessage,
+  startupLogFailures,
   versionMatches,
 } from './helper-core.mjs';
 import { parse } from './vendor/semver.mjs';
@@ -151,12 +152,30 @@ function run(command, args, options = {}) {
   });
 }
 
-async function launchDesktop() {
+function appStartupLogPath() {
+  return resultPath ? join(dirname(resultPath), 'app-start.log') : '';
+}
+
+async function launchDesktop(logPath = '') {
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.NODE_OPTIONS;
   delete env.NODE_PATH;
-  const child = spawn(exe, [], { detached: true, stdio: 'ignore', windowsHide: true, env });
+  let fd = null;
+  if (logPath) {
+    try { fd = openSync(logPath, 'w'); } catch { fd = null; }
+  }
+  let child;
+  try {
+    child = spawn(exe, [], {
+      detached: true,
+      stdio: fd === null ? 'ignore' : ['ignore', fd, fd],
+      windowsHide: true,
+      env,
+    });
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
   await new Promise((resolvePromise, reject) => {
     child.once('spawn', resolvePromise);
     child.once('error', reject);
@@ -275,8 +294,25 @@ async function waitHeartbeat(launchedAt, timeoutMs = 120_000, path = heartbeatPa
 
 async function launchAndVerify() {
   const launchedAt = Date.now();
-  await launchDesktop();
-  return waitHeartbeat(launchedAt);
+  const logPath = appStartupLogPath();
+  await launchDesktop(logPath);
+  const heartbeat = await waitHeartbeat(launchedAt);
+  if (!heartbeat.ok) return heartbeat;
+  if (logPath) {
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 1_000));
+    let text = '';
+    try { text = await readFile(logPath, 'utf8'); } catch { /* log is best effort */ }
+    const failures = startupLogFailures(text);
+    if (failures.length > 0) {
+      return {
+        ok: false,
+        reason: 'startup log reports plugin activation failures',
+        failures,
+        logPath,
+      };
+    }
+  }
+  return { ...heartbeat, startupLog: logPath ? 'ok' : 'unavailable' };
 }
 
 async function pnpmInstall(options = {}) {
@@ -439,7 +475,15 @@ async function failWithRollback(message, detail = '', options = {}) {
     if (options.relaunch !== false) {
       healthy = await launchAndVerify().catch((error) => ({ ok: false, reason: error.message }));
     }
-    await save({ state: 'failed', message, detail, appHealthy: healthy.ok });
+    await save({
+      state: 'failed',
+      message,
+      detail,
+      appHealthy: healthy.ok,
+      startupLog: healthy.startupLog || null,
+      startupLogDetail: healthy.failures || null,
+      healthDetail: healthy.reason || null,
+    });
     return;
   }
 
@@ -489,6 +533,8 @@ async function failWithRollback(message, detail = '', options = {}) {
     profileRestored,
     profileDetail,
     appHealthy: healthy.ok,
+    startupLog: healthy.startupLog || null,
+    startupLogDetail: healthy.failures || null,
     healthDetail: healthy.reason || null,
   });
 }
@@ -548,7 +594,7 @@ async function rollbackOnly() {
     message: outcome.rolledBack
       ? (profileOnly
         ? '插件 profile 已回滚；核心保持当前版本，应用已重新启动'
-        : '回滚完成：应用已重新启动，更新插件心跳验证通过')
+        : '回滚完成：应用已重新启动，启动日志与更新插件心跳验证通过')
       : rollbackMessage({
         complete: outcome.rolledBack,
         coreMutated,
@@ -564,6 +610,8 @@ async function rollbackOnly() {
     profileRestored,
     profileDetail,
     appHealthy: healthy.ok,
+    startupLog: healthy.startupLog || null,
+    startupLogDetail: healthy.failures || null,
     healthDetail: healthy.reason || null,
   });
 }
@@ -613,14 +661,15 @@ async function updateFlow() {
   await save({ state: 'verifying-app', message: '正在启动并验证新的 DeepSeek Harness…' });
   const healthy = await launchAndVerify().catch((error) => ({ ok: false, reason: error.message }));
   if (!healthy.ok) {
-    await failWithRollback(`新版本启动后未通过插件心跳验证：${healthy.reason || 'unknown'}`);
+    await failWithRollback(`新版本启动后未通过启动健康验证：${healthy.reason || 'unknown'}`, (healthy.failures || []).join('\n'));
     return;
   }
   result.coreVersion = result.coreVersion || await installedCoreVersion();
   await save({
     state: 'succeeded',
-    message: '更新完成：应用已稳定运行，更新插件心跳与 profile 依赖完整性检查通过',
+    message: '更新完成：应用已稳定运行，启动日志无插件激活失败，更新插件心跳与 profile 依赖完整性检查通过',
     appHealthy: true,
+    startupLog: healthy.startupLog || null,
     profileDependencies: 'ok',
   });
   if (installerPath) await unlink(installerPath).catch(() => {});
@@ -664,6 +713,8 @@ export {
   backupProfileFiles,
   closeDesktop,
   failWithRollback,
+  launchAndVerify,
+  launchDesktop,
   restoreProfileBackup,
   run,
   updatePlugins,

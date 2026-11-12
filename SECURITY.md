@@ -34,7 +34,7 @@ Include affected version, platform, reproduction steps, impact and any suggested
 - Run-lock owners are checked for liveness and transferred to a detached supervisor; a helper crash without a terminal result starts one journal-driven recovery pass.
 - Desktop plugin target versions without a DSH compatibility contract are held, not auto-installed; source lookup failures are surfaced per plugin and suppress `autoApply`.
 - Desktop core updates are channel-bound: prerelease cores use nightly, stable cores never silently use nightly, and a missing stable feed leaves the core unchanged.
-- Helper command timeouts wait for process-tree termination before rollback. Profile rollback includes manifest, locks and known DSH config files, and prefers offline pnpm restoration. Success requires a run-bound settled heartbeat after a ten-second stability window.
+- Helper command timeouts wait for process-tree termination before rollback. Profile rollback includes manifest, locks and known DSH config files, and prefers offline pnpm restoration. Success requires a run-bound settled heartbeat after a ten-second stability window plus a Desktop startup log without DSH plugin-activation warnings.
 - Historical updater artifacts are report-only by default (`cleanup-report.json`); deleting old installers/profile backups requires explicit `pruneOldArtifacts: true`.
 - The plugin installer accepts only the expected package name, confines its destination to the profile's `node_modules`, and restores the previous plugin/profile on failure.
 - Telemetry is disabled by default. Any configured endpoint must be HTTPS, contains no credentials, exposes no plugin names or paths, and drops a failed batch without affecting an update.

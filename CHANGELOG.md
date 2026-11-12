@@ -2,6 +2,18 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
+## [0.3.14] - 2026-11-12
+
+### Fixed
+
+- Captured the real Desktop stdout/stderr during launch and added startup-log health checks for `entry did not activate` and `pending (waiting for service: …)`. A host-side activation warning can now prevent a false “updated successfully” result.
+- Added real launch evidence that the Desktop GUI logs `dsh web`, mounts routes and produces a settled plugin heartbeat without being misclassified by the new gate.
+- Bumped the Desktop plugin to `0.2.13` for the startup-health behavior.
+
+### Tests
+
+- Added startup-log false-positive/true-positive tests; **159/159** pass.
+
 ## [0.3.13] - 2026-11-11
 
 ### Fixed

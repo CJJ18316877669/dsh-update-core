@@ -7,8 +7,25 @@ import {
   decideRollbackOutcome,
   normalizeProductVersion,
   rollbackMessage,
+  startupLogFailures,
   versionMatches,
 } from '../plugin/lib/helper-core.mjs';
+
+test('helper startup log: activation warnings fail health while normal logs pass', () => {
+  assert.deepEqual(startupLogFailures([
+    'Checking for update',
+    'dsh web: http://127.0.0.1:1234/?token=redacted',
+    '[hub] routes mounted',
+  ].join('\n')), []);
+  const failures = startupLogFailures([
+    'Checking for update',
+    'dsh: warning: 1 entry did not activate',
+    'dsh-plugin-x (dsh-plugin-x): pending (waiting for service: webServer)',
+  ].join('\n'));
+  assert.equal(failures.length, 2);
+  assert.match(failures[0], /did not activate/);
+  assert.match(failures[1], /pending \(waiting for service/);
+});
 
 test('helper version verification: ProductVersion fallback is normalised but prereleases stay exact', () => {
   assert.equal(normalizeProductVersion('0.2.2.0'), '0.2.2');

@@ -1,17 +1,17 @@
 # DeepSeek Harness 一键更新器
 
-> 版本：0.3.13<br>
+> 版本：0.3.14<br>
 > 日期：2026-11-12<br>
 > 适用：DeepSeek Harness（`dsh`）0.2.x，Cordis「一切皆插件」架构<br>
 > 状态：**Windows + nightly 早期预览（Beta）**<br>
 > 目标：一个按钮完成 Harness 版本更新，为可验证的插件选择兼容版本，并在失败时恢复核心与 profile；无法确认兼容性的插件保持当前版本。
 
-**当前状态：`dsh-update-core@0.3.13` 与 `dsh-update-core-plugin@0.2.12` 可运行、可测试、可复用，仅支持 Windows x64。** 158 项自动化测试通过；已提供 Desktop 设置页 DSH 插件，可一键更新核心与兼容插件；已覆盖真实 `cordis.patch.yml` 禁用/逐字节恢复、staging 启动门控、原子切换、独立 watchdog、跨平台路径与进程树、默认关闭的遥测上报、真实 registry SRI 冒烟，以及 live 原型。真实 Node 24 + dsh staging、Windows Desktop 签名/启动证据见 `docs/REAL_ACCEPTANCE.md`，当前插件的真实核心升级与回滚见 `docs/PLUGIN_ACCEPTANCE.md`。
+**当前状态：`dsh-update-core@0.3.14` 与 `dsh-update-core-plugin@0.2.13` 可运行、可测试、可复用，仅支持 Windows x64。** 159 项自动化测试通过；已提供 Desktop 设置页 DSH 插件，可一键更新核心与兼容插件；已覆盖真实 `cordis.patch.yml` 禁用/逐字节恢复、staging 启动门控、原子切换、独立 watchdog、跨平台路径与进程树、默认关闭的遥测上报、真实 registry SRI 冒烟，以及 live 原型。真实 Node 24 + dsh staging、Windows Desktop 签名/启动证据见 `docs/REAL_ACCEPTANCE.md`，当前插件的真实核心升级与回滚见 `docs/PLUGIN_ACCEPTANCE.md`。
 
 ### 当前公开预览边界
 
 - 核心渠道：当前只支持 **nightly**；稳定版核心不会跨渠道升级，官方 stable feed 未提供时核心保持不动。
-- 健康检查：能够验证更新插件稳定运行、核心版本和 profile 依赖完整性，但 DSH 尚无稳定的全插件运行时状态接口，不能证明每个第三方插件都已激活。
+- 健康检查：会验证更新插件稳定运行、核心版本、profile 依赖完整性，并扫描 Desktop 启动日志中的 `entry did not activate` / `pending (waiting for service: …)`。如果 DSH 没有输出激活警告，仍不能绝对证明每个第三方插件都已激活。
 - 自动更新：`autoApply` 默认关闭；启用后会关闭并重启 Desktop，存在未保存会话中断风险。
 - 安装器：官方 NSIS 安装器可能触发 UAC；核心回滚依赖官方旧版安装包仍可下载。
 - 平台：Windows x64；Linux/macOS 不在当前支持范围。
@@ -59,7 +59,7 @@ Desktop 的定位不依赖固定安装目录：会读取运行中的进程路径
 
 点击“一键更新并重启”后，更新请求会立即返回，设置页内置的进度条实时显示安装包下载百分比、已下载大小和阶段（下载核心安装包 / 下载回滚安装包 / 关闭 Desktop / 安装核心 / 更新插件 / 启动验证），不再依赖外部窗口。Desktop 重启后，`active-run.json` 与带 PID 存活检测的 `update.lock` 会把尚未结束的运行恢复到设置页。插件启动 detached supervisor，由它管理 helper；helper 异常退出而没有写入终态时，supervisor 会依据持久化的核心/profile 变更标记自动执行一次恢复。核心更新前还会预先下载当前版本的官方安装包，并在本次 run 目录内备份 `package.json`、锁文件、`cordis.patch.yml`、`cordis.yml`、`compatibility.json` 等 profile 配置。恢复优先使用 pnpm 离线存储，每次 run 的回滚点相互隔离；插件启动后会生成旧安装包清理报告，显式开启 `pruneOldArtifacts` 后才执行清理。
 
-启动健康检查要求与本次 run 绑定、且在 10 秒稳定窗口后写入的 `settled` 心跳，同时检查精确核心版本和 profile 依赖完整性。DSH 目前没有稳定的“全部插件运行时状态”接口，因此该检查不能替代宿主对第三方插件激活状态的报告；需要宿主提供 `plugins.failed` 类健康端点后进一步收紧。
+启动健康检查要求与本次 run 绑定、且在 10 秒稳定窗口后写入的 `settled` 心跳，同时检查精确核心版本、profile 依赖完整性，并扫描 Desktop 启动日志中的插件激活失败。DSH 目前没有稳定的“全部插件运行时状态”接口；如果宿主不输出警告，该检查仍不能替代宿主的全插件状态报告。
 
 可选配置写在 `~/.dsh/profiles/desktop/cordis.patch.yml` 中：
 
@@ -104,7 +104,7 @@ npm run plugin:install -- --home C:\Temp\dsh-e2e-home --profile test --cli 'C:\�
 要求 Node.js ≥ 20；真实 dsh 当前 release 自身要求 Node.js ≥ 24.9.0，更新器会在下载前按目标包的 `engines.node` 拒绝不满足的宿主。
 
 ```bash
-npm test                         # 158 项，零依赖
+npm test                         # 159 项，零依赖
 npm run ui                       # live 原型，默认仅监听 127.0.0.1 的随机端口
 npm run smoke:registry           # 真实 registry + tarball SRI 冒烟
 node src/cli.mjs demo --scenario success --fast
@@ -122,7 +122,7 @@ node src/cli.mjs status --home <dir>
 | `docs/PLUGIN_ACCEPTANCE.md` | 当前 Desktop 插件的真实核心升级与回滚验收 |
 | `RELEASE.md` | 发布范围、验收门槛、tag 流程与不可发布条件 |
 | `src/` | 零依赖 ESM 实现：编排、Journal、watchdog、ProfileStore、门控、后端、路径/进程/文件系统、i18n、遥测、live server |
-| `test/` | 158 项单元、集成、CLI 契约、故障注入与安全边界用例 |
+| `test/` | 159 项单元、集成、CLI 契约、故障注入与安全边界用例 |
 | `prototype.html` / `preview*.png` | live/离线双模式原型与 6 张由真实页面重拍的 1080×1100 截图 |
 | `scripts/` | 真实 registry 冒烟与 Edge DevTools 截图脚本 |
 | `LICENSE` / `CHANGELOG.md` / `SECURITY.md` / `PRIVACY.md` | MIT 许可、版本记录、安全与隐私说明 |

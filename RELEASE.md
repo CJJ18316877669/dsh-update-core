@@ -38,9 +38,9 @@ updater. A stable-version Harness core never falls back to the nightly feed.
 ## Tag and GitHub release
 
 ```bash
-git tag v0.3.13
+git tag v0.3.14
 git push origin main
-git push origin v0.3.13
+git push origin v0.3.14
 ```
 
 The release workflow packs both the root library and the Desktop plugin. Mark the

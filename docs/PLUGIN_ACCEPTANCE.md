@@ -11,7 +11,7 @@ Desktop and its real profile. Paths in this record are intentionally generic.
 | Desktop before | `0.2.2-rc.1` |
 | Desktop after update | `0.2.2-rc.2` |
 | Desktop after rollback | `0.2.2-rc.1` |
-| Plugin | `dsh-update-core-plugin@0.2.12` |
+| Plugin | `dsh-update-core-plugin@0.2.13` |
 | Channel | `nightly` |
 | Plan before | 0 plugin updates, 15 kept, 1 compatibility risk, 1 unverified target |
 | Known risk | `dsh-workbuddy-connect@0.7.9` is incompatible with the current core |
@@ -23,12 +23,13 @@ compatibility-risk confirmation.
 
 | Check | Result |
 |---|---|
-| Run | `2026-11-12T00-43-02-811Z` |
+| Run | `2026-11-12T02-32-21-833Z` |
 | Downloaded installer | sha512 + Authenticode verified |
 | Downloaded rollback installer | Authenticode verified |
 | Final state | `succeeded` |
 | Core version | `0.2.2-rc.2` |
 | App health | `appHealthy: true` |
+| Startup log | `startupLog: ok` |
 | Profile dependencies | `profileDependencies: ok` |
 | Plugin updates | 0 |
 | Plugins kept | 15 |
@@ -45,12 +46,13 @@ was invoked.
 
 | Check | Result |
 |---|---|
-| Run | `2026-11-12T01-01-10-591Z` |
+| Run | `2026-11-12T02-50-34-223Z` |
 | Final state | `rolled-back` |
 | Core version | `0.2.2-rc.1` |
 | `coreRolledBack` | `true` |
 | `profileRestored` | `true` |
 | `appHealthy` | `true` |
+| `startupLog` | `ok` |
 | Final status | core `0.2.2-rc.1`, channel `nightly` |
 
 ## Evidence handling

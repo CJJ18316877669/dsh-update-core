@@ -60,3 +60,25 @@ export function rollbackMessage({
   if (!appHealthy) problems.push('应用未通过启动健康检查');
   return `回滚未完整完成：${problems.join('；') || '存在未恢复的变更'}`;
 }
+
+/**
+ * DSH writes activation warnings to the Desktop stdout/stderr stream. The
+ * updater already knows its own plugin loaded; these warnings are the only
+ * host-side signal currently available for other plugins.
+ */
+export function startupLogFailures(text) {
+  const patterns = [
+    /(?:^|\n).*dsh: warning:.*did not activate/i,
+    /(?:^|\n).*pending \(waiting for service:/i,
+    /(?:^|\n).*did not activate.*(?:plugin|entry|dsh-)/i,
+  ];
+  const lines = String(text || '').split(/\r?\n/);
+  const failures = [];
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    if (patterns.some((pattern) => pattern.test(`\n${line}`)) && !failures.includes(line.trim())) {
+      failures.push(line.trim());
+    }
+  }
+  return failures.slice(0, 12);
+}

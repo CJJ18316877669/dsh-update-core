@@ -71,6 +71,11 @@ export function startupLogFailures(text) {
     /(?:^|\n).*dsh: warning:.*did not activate/i,
     /(?:^|\n).*pending \(waiting for service:/i,
     /(?:^|\n).*did not activate.*(?:plugin|entry|dsh-)/i,
+    // dsh >= 0.2.2 rejects a profile bundle whose exact peer requirements do not
+    // match the running core: it skips the bundle while loading the profile and
+    // the desktop host then exits with code 1, so the app is unusable.
+    /(?:^|\n).*dsh: skipping profile bundle/i,
+    /(?:^|\n).*is incompatible with dsh \d/i,
   ];
   const lines = String(text || '').split(/\r?\n/);
   const failures = [];

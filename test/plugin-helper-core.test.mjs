@@ -27,6 +27,19 @@ test('helper startup log: activation warnings fail health while normal logs pass
   assert.match(failures[1], /pending \(waiting for service/);
 });
 
+test('helper startup log: a bundle rejected by the dsh compatibility gate fails health', () => {
+  const failures = startupLogFailures([
+    '[hub] routes mounted (profile=desktop, loader=provided)',
+    'dsh web: http://127.0.0.1:64604/?token=redacted',
+    'Error: dsh desktop host exited with 1: dsh: skipping profile bundle "dsh-workbuddy-connect": '
+      + 'Error: Plugin dsh-workbuddy-connect@0.7.9 is incompatible with dsh 0.2.2-rc.2: '
+      + 'requirements {"@deepseek-ai/dsh-llm":"0.2.1-rc.2"}. '
+      + 'Exact-version exemption: not active.',
+  ].join('\n'));
+  assert.equal(failures.length, 1);
+  assert.match(failures[0], /skipping profile bundle/);
+});
+
 test('helper version verification: ProductVersion fallback is normalised but prereleases stay exact', () => {
   assert.equal(normalizeProductVersion('0.2.2.0'), '0.2.2');
   assert.equal(normalizeProductVersion('0.2.2-rc.1'), '0.2.2-rc.1');

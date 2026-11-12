@@ -2,6 +2,18 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
+## [0.3.15] - 2026-11-12
+
+### Fixed
+
+- Startup health now fails when dsh refuses a profile bundle. `dsh: skipping profile bundle …` and `… is incompatible with dsh <version>` are treated as fatal, so a core update that leaves an exact-pinned bundle like `dsh-workbuddy-connect@0.7.9` unloadable is rolled back instead of being recorded as a success. dsh skips such a bundle while loading the profile, and the Desktop host then exits with code 1, so the app is unusable.
+- The captured startup log is now watched for up to 45 seconds after the settled heartbeat instead of being read once, one second after it. In the `0.2.2-rc.2` run the rejection was printed only after the remaining bundles finished loading, roughly 20 seconds after the heartbeat, and the single read missed it.
+- Bumped the Desktop plugin to `0.2.14` for the startup-health behavior.
+
+### Tests
+
+- Added a regression test that replays the real `app-start.log` signature of a skipped bundle and asserts healthy startup logs still pass; **160/160** pass.
+
 ## [0.3.14] - 2026-11-12
 
 ### Fixed

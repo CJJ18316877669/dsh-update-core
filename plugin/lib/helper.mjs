@@ -42,6 +42,8 @@ const pnpmPath = configuredPnpm || (profileDir ? join(profileDir, 'node_modules'
 const INSTALL_TIMEOUT_MS = 20 * 60_000;
 const PNPM_TIMEOUT_MS = 15 * 60_000;
 const CLOSE_TIMEOUT_MS = 45_000;
+const STARTUP_LOG_WATCH_MS = 45_000;
+const STARTUP_LOG_POLL_MS = 1_000;
 
 let coreMutated = false;
 let profileMutated = false;
@@ -292,6 +294,27 @@ async function waitHeartbeat(launchedAt, timeoutMs = 120_000, path = heartbeatPa
   return { ok: false, reason: 'heartbeat timeout' };
 }
 
+/**
+ * Watch the relaunched desktop's captured stdout/stderr until it reports a
+ * plugin failure or stays clean for the whole settle window. A single read right
+ * after the heartbeat races with the host: a bundle rejected by the dsh
+ * compatibility gate is reported only once the profile loads, and the host may
+ * exit with code 1 seconds later.
+ * @param {string} logPath
+ * @returns {Promise<string[]>} failure lines, empty when the window stays clean
+ */
+async function watchStartupLog(logPath) {
+  const deadline = Date.now() + STARTUP_LOG_WATCH_MS;
+  for (;;) {
+    let text = '';
+    try { text = await readFile(logPath, 'utf8'); } catch { /* log is best effort */ }
+    const failures = startupLogFailures(text);
+    if (failures.length > 0) return failures;
+    if (Date.now() >= deadline) return [];
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, STARTUP_LOG_POLL_MS));
+  }
+}
+
 async function launchAndVerify() {
   const launchedAt = Date.now();
   const logPath = appStartupLogPath();
@@ -299,10 +322,7 @@ async function launchAndVerify() {
   const heartbeat = await waitHeartbeat(launchedAt);
   if (!heartbeat.ok) return heartbeat;
   if (logPath) {
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 1_000));
-    let text = '';
-    try { text = await readFile(logPath, 'utf8'); } catch { /* log is best effort */ }
-    const failures = startupLogFailures(text);
+    const failures = await watchStartupLog(logPath);
     if (failures.length > 0) {
       return {
         ok: false,

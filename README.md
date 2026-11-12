@@ -1,26 +1,40 @@
 # DeepSeek Harness 一键更新器
 
-> 版本：2.0
-> 日期：2026-11-09
-> 适用：DeepSeek Harness（`dsh`）0.2.x，Cordis「一切皆插件」架构
-> 目标：一个按钮完成 Harness 版本更新，并保证现有插件在新版本上仍可加载；失败可回滚，结果可解释。
+> 版本：0.3.13<br>
+> 日期：2026-11-12<br>
+> 适用：DeepSeek Harness（`dsh`）0.2.x，Cordis「一切皆插件」架构<br>
+> 状态：**Windows + nightly 早期预览（Beta）**<br>
+> 目标：一个按钮完成 Harness 版本更新，为可验证的插件选择兼容版本，并在失败时恢复核心与 profile；无法确认兼容性的插件保持当前版本。
 
-**当前状态：`dsh-update-core@0.3.11` 可运行、可测试、可复用，仅支持 Windows。** 123 项自动化测试通过；已提供 Desktop 设置页 DSH 插件，可一键更新核心与兼容插件；已覆盖真实 `cordis.patch.yml` 禁用/逐字节恢复、staging 启动门控、原子切换、独立 watchdog、跨平台路径与进程树、默认关闭的遥测上报、真实 registry SRI 冒烟，以及 live 原型。真实 Node 24 + dsh staging 与 Windows Desktop 签名/启动证据见 `docs/REAL_ACCEPTANCE.md`。
+**当前状态：`dsh-update-core@0.3.13` 与 `dsh-update-core-plugin@0.2.12` 可运行、可测试、可复用，仅支持 Windows x64。** 158 项自动化测试通过；已提供 Desktop 设置页 DSH 插件，可一键更新核心与兼容插件；已覆盖真实 `cordis.patch.yml` 禁用/逐字节恢复、staging 启动门控、原子切换、独立 watchdog、跨平台路径与进程树、默认关闭的遥测上报、真实 registry SRI 冒烟，以及 live 原型。真实 Node 24 + dsh staging、Windows Desktop 签名/启动证据见 `docs/REAL_ACCEPTANCE.md`，当前插件的真实核心升级与回滚见 `docs/PLUGIN_ACCEPTANCE.md`。
+
+### 当前公开预览边界
+
+- 核心渠道：当前只支持 **nightly**；稳定版核心不会跨渠道升级，官方 stable feed 未提供时核心保持不动。
+- 健康检查：能够验证更新插件稳定运行、核心版本和 profile 依赖完整性，但 DSH 尚无稳定的全插件运行时状态接口，不能证明每个第三方插件都已激活。
+- 自动更新：`autoApply` 默认关闭；启用后会关闭并重启 Desktop，存在未保存会话中断风险。
+- 安装器：官方 NSIS 安装器可能触发 UAC；核心回滚依赖官方旧版安装包仍可下载。
+- 平台：Windows x64；Linux/macOS 不在当前支持范围。
 
 ---
 
 ## DSH 插件：Desktop 一键更新
 
-从 GitHub 下载/克隆本仓库后，把 `plugin/` 安装到 Desktop profile：
+从 GitHub 下载/克隆本仓库后，推荐用安装脚本把 `plugin/` 安装到 Desktop profile（脚本会验证包名和路径，并备份旧插件）：
 
 ```powershell
 git clone https://github.com/CJJ18316877669/dsh-update-core.git
 cd dsh-update-core
-& 'C:\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add "file:$PWD\plugin"
+npm run plugin:install
 ```
 
-> 更新插件自身代码后，pnpm 可能复用同版本的 `file:` 目录而漏掉新增文件。先删除
-> `%USERPROFILE%\.dsh\profiles\desktop\node_modules\dsh-update-core-plugin`，再执行上面的 `add` 命令。
+如安装目录自定义，脚本会从运行中的 Desktop 或卸载项推导 `dsh.cmd`；也可显式传入：
+
+```powershell
+npm run plugin:install -- --cli 'C:\你的安装目录\resources\runtime\cli\bin\dsh.cmd'
+```
+
+> 不要手工递归删除 `node_modules/dsh-update-core-plugin`。安装脚本会先备份旧目录和 profile 清单，在 `dsh plugin add` 失败时自动恢复。
 
 完全退出并重新打开 DeepSeek Harness，进入：
 
@@ -28,19 +42,24 @@ cd dsh-update-core
 设置 → 一键更新
 ```
 
+> **核心渠道**：插件根据当前核心版本自动判断渠道。预发布核心走官方 nightly feed；稳定版核心不会回退到 nightly，若官方 stable feed 尚未提供，则核心保持当前版本，只处理插件更新。可用 `feedUrl` 显式覆盖官方 feed，但仍会校验目标版本渠道。
+
 Desktop 的定位不依赖固定安装目录：会读取运行中的进程路径、卸载项的 `InstallLocation` / `DisplayIcon`，并兼容 `DeepSeek Harness 0.2.1-rc.5` 这类带版本号的 DisplayName，因此自定义安装目录也能识别。
 
 页面会显示当前核心、官方最新核心，以及每个插件的处置：
 
-- 有兼容新核心的更高版本：更新；
+- 有明确兼容新核心的更高版本：更新；目标版本缺少 `engines.dsh` / peer 兼容契约时保持当前版本并标记“待验证”；
 - 最新版本不兼容目标核心：保持当前版本，不删除、不禁用；
 - git/GitHub 依赖：解析 release/tag，只接受包名、版本和 DSH 兼容性都匹配的版本；
 - 同名但仓库不一致：拒绝更新，标记 `repository-mismatch`；
+- 插件源或 GitHub 元数据暂时不可达：逐插件显示告警并保持当前版本；
 - 可对单个插件“忽略此版本”，上游再发新版本后会重新提示；
 - 每 6 小时自动检查一次（可通过 `autoCheckHours` 调整）；
 - 展示最近 30 次更新历史，包括核心版本、插件数量和回滚结果。
 
-点击“一键更新并重启”后，更新请求会立即返回，设置页内置的进度条实时显示安装包下载百分比、已下载大小和阶段（下载核心安装包 / 下载回滚安装包 / 关闭 Desktop / 安装核心 / 更新插件 / 启动验证），不再依赖外部窗口。Desktop 重启后，`active-run.json` 会把尚未结束的运行恢复到设置页。插件随后启动外部 helper：关闭 Desktop、下载并校验官方安装包（核心有新版时）、按计划更新 profile 插件、启动新版本并等待插件心跳确认健康。核心更新前还会预先下载当前版本的官方安装包，并备份 profile 清单与锁文件，用于失败自动回滚和手动“回滚上一版本”。
+点击“一键更新并重启”后，更新请求会立即返回，设置页内置的进度条实时显示安装包下载百分比、已下载大小和阶段（下载核心安装包 / 下载回滚安装包 / 关闭 Desktop / 安装核心 / 更新插件 / 启动验证），不再依赖外部窗口。Desktop 重启后，`active-run.json` 与带 PID 存活检测的 `update.lock` 会把尚未结束的运行恢复到设置页。插件启动 detached supervisor，由它管理 helper；helper 异常退出而没有写入终态时，supervisor 会依据持久化的核心/profile 变更标记自动执行一次恢复。核心更新前还会预先下载当前版本的官方安装包，并在本次 run 目录内备份 `package.json`、锁文件、`cordis.patch.yml`、`cordis.yml`、`compatibility.json` 等 profile 配置。恢复优先使用 pnpm 离线存储，每次 run 的回滚点相互隔离；插件启动后会生成旧安装包清理报告，显式开启 `pruneOldArtifacts` 后才执行清理。
+
+启动健康检查要求与本次 run 绑定、且在 10 秒稳定窗口后写入的 `settled` 心跳，同时检查精确核心版本和 profile 依赖完整性。DSH 目前没有稳定的“全部插件运行时状态”接口，因此该检查不能替代宿主对第三方插件激活状态的报告；需要宿主提供 `plugins.failed` 类健康端点后进一步收紧。
 
 可选配置写在 `~/.dsh/profiles/desktop/cordis.patch.yml` 中：
 
@@ -49,10 +68,12 @@ Desktop 的定位不依赖固定安装目录：会读取运行中的进程路径
   config:
     autoCheckHours: 6       # 0 关闭定时检查
     autoApply: false         # true 时检查到更新会自动关闭并更新，默认关闭
+    pruneOldArtifacts: false # true 才真正删除历史安装包；默认只生成 cleanup-report.json
+    feedUrl: ''              # 可选；默认按核心版本选择 nightly/stable feed
     githubToken: ''          # 也可用 DSH_GITHUB_TOKEN / GITHUB_TOKEN 环境变量
 ```
 
-`autoApply: true` 会在后台检查到更新后直接执行“一键更新”，仍会关闭并重启 Desktop，建议只在你明确接受自动重启时开启。
+`autoApply: true` 会在后台检查到更新后直接执行“一键更新”，仍会关闭并重启 Desktop，建议只在你明确接受自动重启时开启。存在插件源检查告警、或已安装插件与目标核心不兼容时，自动安装会跳过，必须由你在设置页阅读风险后手动确认。
 
 更新插件自身后，强制刷新 `file:` 依赖：
 
@@ -60,7 +81,13 @@ Desktop 的定位不依赖固定安装目录：会读取运行中的进程路径
 npm run plugin:install
 ```
 
-该脚本会先删除旧的 `node_modules/dsh-update-core-plugin`，再重新执行 `dsh plugin add`，避免 pnpm 复用旧目录。
+隔离实验可以指定临时 home，并跳过全局 Desktop 进程检查（仅隔离 home 生效）：
+
+```powershell
+npm run plugin:install -- --home C:\Temp\dsh-e2e-home --profile test --cli 'C:\你的安装目录\resources\runtime\cli\bin\dsh.cmd' --allow-running
+```
+
+该脚本会验证包名和 profile 名、把目标路径限制在 `node_modules` 内，先备份旧插件及 profile 配置/锁文件，再重新执行 `dsh plugin add`；失败时自动恢复，避免 pnpm 复用旧目录。
 
 更新前备份位于：
 
@@ -68,14 +95,16 @@ npm run plugin:install
 ~/.dsh/updates/dsh-update-plugin/<run>/
 ```
 
-要求 Windows x64，Desktop 已安装到 `C:\DeepSeek Harness`（或可通过 `DSH_DESKTOP_EXE` 指定）。更新期间会关闭当前 Desktop，未保存的会话可能中断；安装器需要 UAC 时会弹出系统确认。
+插件启动后会计算可清理的历史安装包、共享 rollback 安装包和旧 profile 备份，并把清单写入 `cleanup-report.json`。默认 `pruneOldArtifacts: false`，只报告不删除；确认清单后把配置改为 `true` 才会真正清理。当前核心回滚点、结果、计划和 helper 日志始终保留，历史目录超过保留数量后整体回收。
+
+要求 Windows x64。Desktop 可安装在自定义目录；也可通过 `DSH_DESKTOP_EXE` 显式指定。更新期间会关闭当前 Desktop，未保存的会话可能中断；安装器需要 UAC 时会弹出系统确认。
 
 ## 快速开始
 
 要求 Node.js ≥ 20；真实 dsh 当前 release 自身要求 Node.js ≥ 24.9.0，更新器会在下载前按目标包的 `engines.node` 拒绝不满足的宿主。
 
 ```bash
-npm test                         # 123 项，零依赖
+npm test                         # 158 项，零依赖
 npm run ui                       # live 原型，默认仅监听 127.0.0.1 的随机端口
 npm run smoke:registry           # 真实 registry + tarball SRI 冒烟
 node src/cli.mjs demo --scenario success --fast
@@ -90,13 +119,14 @@ node src/cli.mjs status --home <dir>
 | 文件 / 目录 | 内容 |
 |---|---|
 | `README.md` | 设计事实源、调研、状态机、流程、兼容、回滚与当前实现边界 |
-| `HANDOVER.md` | 当前实现状态、验收命令、剩余外部风险和交接说明 |
+| `docs/PLUGIN_ACCEPTANCE.md` | 当前 Desktop 插件的真实核心升级与回滚验收 |
+| `RELEASE.md` | 发布范围、验收门槛、tag 流程与不可发布条件 |
 | `src/` | 零依赖 ESM 实现：编排、Journal、watchdog、ProfileStore、门控、后端、路径/进程/文件系统、i18n、遥测、live server |
-| `test/` | 123 项单元、集成、CLI 契约、故障注入与安全边界用例 |
+| `test/` | 158 项单元、集成、CLI 契约、故障注入与安全边界用例 |
 | `prototype.html` / `preview*.png` | live/离线双模式原型与 6 张由真实页面重拍的 1080×1100 截图 |
 | `scripts/` | 真实 registry 冒烟与 Edge DevTools 截图脚本 |
 | `LICENSE` / `CHANGELOG.md` / `SECURITY.md` / `PRIVACY.md` | MIT 许可、版本记录、安全与隐私说明 |
-| `.github/workflows/` | 4 平台 × Node 20/22/24 的测试矩阵与 tag 发布流程 |
+| `.github/workflows/` | Windows × Node 20/22/24 的测试矩阵与 tag 发布流程 |
 
 ## 模块与可复用 API
 

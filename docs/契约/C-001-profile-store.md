@@ -35,7 +35,7 @@ enable(handle: {name: string} | string) => Promise<{name: string}>
 
 - 写法是目标条目下 `disabled: true`。
 - 真实 `@deepseek-ai/dsh-app-boot@0.2.2-rc.1` 文档明确：Loader 跳过 disabled 条目；`--dump-config` **会保留并输出 disabled 声明**，不能用“输出中整行消失”作为验收。
-- 本机 Node 22 低于目标 dsh 要求的 Node 24.9，未执行真实 24.x 启动；该外部验收记录在 HANDOVER。
+- 本机 Node 22 低于目标 dsh 要求的 Node 24.9，未执行真实 24.x 启动；该外部验收记录在 `docs/REAL_ACCEPTANCE.md`。
 
 ## 禁止
 

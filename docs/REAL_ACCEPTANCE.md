@@ -74,9 +74,9 @@ This proved that process liveness alone gave a false PASS. Staging now treats th
 
 A separate helper process was started against a real journal, real snapshot and non-listening port. The owner never committed. At the deadline the helper restored the original profile, transitioned the journal to `rolled-back`, disarmed the watchdog and exited with code 2. Sentinel content, journal and watchdog state all matched the expected rollback.
 
-### Windows Desktop upgrade limitation
+### Windows Desktop qualification history
 
-The official previous installer `deepseek-harness-0.2.1-rc.5-win-x64.exe` and current `nightly.yml` (`0.2.2-rc.1`) were downloaded and verified; the installer has a valid EV signature. A portable extraction starts only after installer registration, and running the older installer over the working installation would downgrade the active application. The official installed-update qualification requires two independently signed test-identity packages plus a disposable installed environment. This cannot be safely substituted on the working host, so no upgrade result is claimed.
+An earlier attempt on the working host was stopped because replacing the registered application in place was not a safe qualification method. That earlier attempt is not the source of the upgrade claim. A later isolated cross-version run used disposable application/user-data directories and is documented in [`WINDOWS_DESKTOP_UPGRADE.md`](WINDOWS_DESKTOP_UPGRADE.md); it observed check, download, signature verification, installer handoff and version replacement. The silent installer's automatic `--force-run` relaunch remains unverified.
 
 ## Windows Desktop
 
@@ -94,22 +94,18 @@ The official previous installer `deepseek-harness-0.2.1-rc.5-win-x64.exe` and cu
 
 The installed application already equals the latest fixed download. Windows-only scope is enforced in package metadata and CI. The real `0.2.1-rc.5 → 0.2.2-rc.1` update was exercised through check, download, signature verification, installer execution and version replacement; see [`WINDOWS_DESKTOP_UPGRADE.md`](WINDOWS_DESKTOP_UPGRADE.md). The silent installer's automatic relaunch was not observed in the non-interactive session. The installed `0.2.2` payload reached a healthy Host with the coordinator idle.
 
+The current `dsh-update-core-plugin@0.2.12` update and rollback transaction against
+`0.2.2-rc.1 → 0.2.2-rc.2` is recorded in
+[`PLUGIN_ACCEPTANCE.md`](PLUGIN_ACCEPTANCE.md).
+
 ## npm publication
 
-- Official registry name check: `dsh-update-core` returns HTTP 404, so the unscoped name is available.
-- `npm whoami --registry https://registry.npmjs.org`: `ENEEDAUTH`.
-- No `NODE_AUTH_TOKEN`, `NPM_TOKEN`, or npm auth token in user/global npm configuration.
-- Package contents and `npm publish --dry-run` pass for `0.2.4`.
-- The repository owner reviewed the authorization request on 2026-11-09 and chose **not to publish at this time**. No token was requested or stored.
-
-When publication is approved later, after `npm login --registry https://registry.npmjs.org`, run:
-
-```bash
-npm publish --access public --registry https://registry.npmjs.org
-```
+This release is distributed through GitHub Releases. npm publication is not part
+of the current release and no registry credentials are stored in the repository.
 
 ## Remaining external work
 
 1. Observation of the silent installer's automatic relaunch in an unattended session.
-2. Prototype whole-page locale switching for all eight UI languages.
-3. npm account authorization and final registry publication.
+2. An official stable feed and stable-channel policy when stable Desktop releases exist.
+3. A host-provided all-plugin runtime health signal for stronger post-update verification.
+4. Whole-page locale switching for all eight prototype UI languages.

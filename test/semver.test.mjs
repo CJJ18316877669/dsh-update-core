@@ -58,6 +58,14 @@ test('maxSatisfying and stable-first sorting', () => {
     sortStableFirstDesc(['1.0.0', '1.1.0-rc.1', '1.1.0']),
     ['1.1.0', '1.0.0', '1.1.0-rc.1'],
   );
+  assert.deepEqual(
+    sortStableFirstDesc(['2.0.0-rc', '2.0.0-rc.1', '1.9.0']),
+    ['1.9.0', '2.0.0-rc.1', '2.0.0-rc'],
+  );
+  assert.deepEqual(
+    sortStableFirstDesc(['2.0.0-alpha', '2.0.0-rc.1', '2.0.0-beta.2']),
+    ['2.0.0-rc.1', '2.0.0-beta.2', '2.0.0-alpha'],
+  );
 });
 
 test('satisfies: partial versions behave like ranges', () => {

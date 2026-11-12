@@ -322,9 +322,9 @@ export function sortStableFirstDesc(versions) {
       const pa = parse(a);
       const pb = parse(b);
       if (!pa || !pb) return 0;
-      if (pa.prerelease.length !== pb.prerelease.length) {
-        return pa.prerelease.length === 0 ? -1 : 1;
-      }
+      const aPrerelease = pa.prerelease.length > 0;
+      const bPrerelease = pb.prerelease.length > 0;
+      if (aPrerelease !== bPrerelease) return aPrerelease ? 1 : -1;
       return rcompare(pa, pb);
     });
 }

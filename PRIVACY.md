@@ -40,4 +40,4 @@ Before writing, `Telemetry` applies recursive redaction for home paths, common u
 
 ## Local data
 
-Journal, watchdog and lock files live under `$DSH_HOME/updates`. They contain versions, state transitions, snapshot paths, plugin counts, process IDs and bounded startup evidence, but no prompts, credentials or session content. Logs and backups follow the retention policy in `README.md` and `HANDOVER.md`.
+Journal, watchdog and lock files live under `$DSH_HOME/updates`. They contain versions, state transitions, snapshot paths, plugin counts, process IDs and bounded startup evidence, but no prompts, credentials or session content. Logs and backups follow the retention policy in `README.md`.

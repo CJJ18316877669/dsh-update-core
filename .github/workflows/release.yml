@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,13 +25,18 @@ jobs:
           node-version: 24
           check-latest: true
       - name: Verify
+        shell: bash
         run: |
           npm test
-          for file in $(find src test scripts -type f -name '*.mjs'); do node --check "$file"; done
+          while IFS= read -r -d '' file; do
+            node --check "$file" || exit 1
+          done < <(find src test scripts plugin -type f \( -name '*.mjs' -o -name '*.js' \) -print0)
       - name: Pack
+        shell: bash
         run: |
           mkdir -p dist
           npm pack --pack-destination dist
+          npm pack ./plugin --pack-destination dist
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

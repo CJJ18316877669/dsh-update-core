@@ -2,6 +2,47 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
+## [0.3.13] - 2026-11-11
+
+### Fixed
+
+- Run locks now track a live owner, transfer ownership to a detached supervisor, heartbeat their lease, and reclaim dead owners without waiting for the old two-hour TTL. A short recovery grace window still prevents a second process from racing a supervisor that is recovering.
+- Added a detached supervisor around the Desktop helper. If the helper exits without a terminal result, the supervisor starts one recovery pass from persisted core/profile mutation flags, writes a terminal failure if recovery also fails, and relaunches Desktop.
+- Helper command timeouts now wait for `taskkill /T` / POSIX termination before resolving, so rollback cannot start while a timed-out installer or pnpm process tree is still writing.
+- New plugin versions without a DSH compatibility contract are no longer auto-updated by the Desktop updater; they are listed as `unverifiedTargets` and kept until a staging/runtime gate exists.
+- Desktop core checks are channel-aware: prerelease cores use nightly, stable cores never fall back to nightly, and a missing official stable feed keeps the core unchanged instead of crossing channels.
+- Profile backups now include `cordis.patch.yml`, `cordis.yml`, `compatibility.json`, `pnpm-workspace.yaml`, `.npmrc` and `settings.json`, and restore removes known config files created by a failed update. Rollback first attempts frozen offline pnpm install, then falls back to online.
+- Added safe retention reporting that keeps history and the active rollback point while identifying obsolete installers, shared rollback artifacts and old profile backups. It writes `cleanup-report.json` and is report-only by default; deletion requires explicit `pruneOldArtifacts: true`.
+- Startup health now requires a run-bound `settled` heartbeat written after ten seconds of plugin stability, rather than a single immediate `loaded` heartbeat.
+- Centralised the plugin version/user-agent values and added a package-version regression check.
+- `plugin:install` now passes an explicit `--home` as `DSH_HOME` to the bundled CLI and supports `--allow-running` only for isolated homes, enabling end-to-end tests without closing a running Desktop. It also recovers and cleans the backup when pnpm relocates it into `node_modules/.ignored`.
+
+### Tests
+
+- Added orphan-lock/PID liveness, supervisor crash recovery, helper timeout tree termination, settled heartbeat, profile config restore, retention dry-run, unknown-contract, `.ignored` recovery and version consistency tests; **158/158** pass.
+
+## [0.3.12] - 2026-11-11
+
+### Fixed
+
+- Blocked plugin installation path traversal: `install-plugin` now requires the exact expected package name, validates the profile name, confines the destination to `node_modules`, backs up the previous plugin/profile, and restores them on failure.
+- Made update/rollback single-flight synchronous and durable across Desktop restarts via `active-run.json`; malformed or duplicate requests can no longer clear a running lock.
+- Rollback now succeeds only when every mutated layer is restored and the restarted app passes the run-bound heartbeat check. A missing core installer or failed profile install is reported as incomplete instead of “rolled back”.
+- Added per-run immutable profile backups and exact lockfile restoration; pnpm failures and missing dependencies now fail the health gate.
+- Serialised progress writes and replaced direct result writes with atomic JSON writes.
+- Registry/GitHub lookup failures are surfaced per plugin instead of silently producing an empty update plan; affected plugins keep their installed version and `autoApply` is disabled for that plan.
+- Installed plugins incompatible with the target core are listed as a confirmation risk; `autoApply` skips them and manual updates require explicit `acceptIncompatible` confirmation.
+- Settings API now enforces loopback Host/remote-address checks, Origin validation, JSON content type and a per-mount CSRF token.
+- Installer downloads require HTTPS, official-host initial URLs, feed `sha512`, a valid Authenticode signature and the official DeepSeek signer subject.
+- Exact prerelease version checks no longer strip `-rc.*`; Desktop discovery maps versions to the matching executable path.
+- Desktop shutdown targets only the configured executable, tries graceful close first, and bounds installer/pnpm/process operations with timeouts.
+- Fixed stable-first semver sorting when prerelease identifiers have different lengths.
+- CI now syntax-checks `plugin/` as well as `src/`, `test/`, and `scripts/`. The Windows release workflow also packages the Desktop plugin tarball and publishes both artifacts.
+
+### Tests
+
+- Added route security, synchronous gate, cross-process run lock, serial state writer, rollback outcome, exact version, installer path, feed hash, registry failure and semver regression tests; **146/146** pass.
+
 ## [0.3.11] - 2026-11-11
 
 ### Added

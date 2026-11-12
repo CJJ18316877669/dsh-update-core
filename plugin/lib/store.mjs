@@ -1,5 +1,6 @@
-import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { randomBytes } from 'node:crypto';
+import { mkdir, open, readdir, readFile, rename, unlink } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 
 async function readJson(file, fallback) {
   try {
@@ -10,10 +11,30 @@ async function readJson(file, fallback) {
 }
 
 async function writeJson(file, value) {
-  await mkdir(join(file, '..'), { recursive: true });
-  const temp = `${file}.${process.pid}.tmp`;
-  await writeFile(temp, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-  await rename(temp, file);
+  await mkdir(dirname(file), { recursive: true });
+  const temp = `${file}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
+  let handle;
+  try {
+    handle = await open(temp, 'w');
+    await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`, 'utf8');
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await rename(temp, file);
+        break;
+      } catch (error) {
+        const retryable = error && ['EPERM', 'EBUSY', 'EACCES'].includes(error.code);
+        if (!retryable || attempt >= 5) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
+      }
+    }
+  } catch (error) {
+    if (handle) await handle.close().catch(() => {});
+    await unlink(temp).catch(() => {});
+    throw error;
+  }
 }
 
 export function stateDir(paths) {

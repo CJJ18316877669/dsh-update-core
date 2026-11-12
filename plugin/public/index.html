@@ -3,37 +3,88 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="dsh-update-token" content="__DSH_UPDATE_TOKEN__">
 <title>DeepSeek Harness 一键更新</title>
 <style>
-  :root { color-scheme: light dark; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-  body { margin: 0; padding: 20px; background: var(--bg, #f6f7f9); color: var(--fg, #1f2328); }
-  .card { max-width: 900px; margin: 0 auto 16px; background: var(--card, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 12px; padding: 18px 20px; }
+  :root {
+    color-scheme: light;
+    --bg: #f6f7f9;
+    --fg: #1f2328;
+    --card: #ffffff;
+    --border: #e5e7eb;
+    --muted: #6b7280;
+    --soft: #eef0f3;
+    --soft-fg: #374151;
+    --accent: #2563eb;
+    --accent-fg: #ffffff;
+    --accent-disabled: #94a3b8;
+    --success-bg: #dcfce7;
+    --success-fg: #166534;
+    --warn-bg: #fef3c7;
+    --warn-fg: #92400e;
+    --danger-bg: #fee2e2;
+    --danger-fg: #991b1b;
+    --update-bg: #dbeafe;
+    --update-fg: #1d4ed8;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #111827;
+      --fg: #f3f4f6;
+      --card: #1f2937;
+      --border: #374151;
+      --muted: #9ca3af;
+      --soft: #374151;
+      --soft-fg: #e5e7eb;
+      --accent: #3b82f6;
+      --accent-disabled: #4b5563;
+      --success-bg: #14532d;
+      --success-fg: #bbf7d0;
+      --warn-bg: #78350f;
+      --warn-fg: #fde68a;
+      --danger-bg: #7f1d1d;
+      --danger-fg: #fecaca;
+      --update-bg: #1e3a8a;
+      --update-fg: #bfdbfe;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 20px; background: var(--bg); color: var(--fg); }
+  .card { max-width: 960px; margin: 0 auto 16px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
   h1 { font-size: 20px; margin: 0 0 6px; }
-  p { margin: 6px 0; color: var(--muted, #6b7280); }
-  .versions { display: flex; gap: 28px; margin: 14px 0; }
+  p { margin: 6px 0; color: var(--muted); }
+  .versions { display: flex; gap: 28px; margin: 14px 0; flex-wrap: wrap; }
   .versions div { display: flex; flex-direction: column; gap: 4px; }
   .versions b { font-size: 18px; }
   button { border: 0; border-radius: 8px; padding: 9px 16px; font-weight: 600; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   button:disabled { opacity: .55; cursor: not-allowed; }
-  #check { background: #eef0f3; color: inherit; }
-  #update { background: #2563eb; color: #fff; }
-  #update:disabled { background: #94a3b8; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #dcfce7; color: #166534; }
-  .badge.warn { background: #fef3c7; color: #92400e; }
+  #check { background: var(--soft); color: inherit; }
+  #update { background: var(--accent); color: var(--accent-fg); }
+  #update:disabled { background: var(--accent-disabled); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: var(--success-bg); color: var(--success-fg); }
+  .badge.warn { background: var(--warn-bg); color: var(--warn-fg); }
+  .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid var(--border, #eee); }
+  th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid var(--border); }
   td:last-child { text-align: right; white-space: nowrap; }
-  .tag { font-size: 12px; padding: 2px 7px; border-radius: 999px; background: #eef0f3; }
-  .tag.update { background: #dbeafe; color: #1d4ed8; }
-  .tag.keep { background: #f1f5f9; color: #475569; }
-  pre { white-space: pre-wrap; font-size: 12px; background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 8px; max-height: 220px; overflow: auto; }
+  .tag { display: inline-block; font-size: 12px; padding: 2px 7px; border-radius: 999px; background: var(--soft); color: var(--soft-fg); }
+  .tag.update { background: var(--update-bg); color: var(--update-fg); }
+  .tag.keep { background: var(--soft); color: var(--soft-fg); }
+  .tag.warn { background: var(--warn-bg); color: var(--warn-fg); }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 8px; max-height: 260px; overflow: auto; }
   .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .meta { font-size: 12px; color: var(--muted, #6b7280); margin-top: 8px; }
-  .mini { padding: 4px 8px; font-size: 12px; font-weight: 500; background: #eef0f3; color: inherit; }
-  .danger { background: #fee2e2; color: #991b1b; }
+  .meta { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .mini { padding: 4px 8px; font-size: 12px; font-weight: 500; background: var(--soft); color: var(--soft-fg); }
+  .danger { background: var(--danger-bg); color: var(--danger-fg); }
   .history { font-size: 12px; }
   .history td { vertical-align: top; }
-  .muted { color: var(--muted, #6b7280); }
+  .muted { color: var(--muted); }
+  #progressTrack { height: 10px; background: var(--soft); border-radius: 999px; overflow: hidden; margin: 10px 0; }
+  #progressBar { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+  @media (max-width: 640px) { body { padding: 10px; } .card { padding: 14px; } }
 </style>
 </head>
 <body>
@@ -49,40 +100,57 @@
     <button id="check">重新检查</button>
     <button id="update" disabled>一键更新并重启</button>
     <button id="rollback" class="mini danger" disabled>回滚上一版本</button>
-    <span id="state"></span>
+    <span id="state" role="status" aria-live="polite"></span>
   </div>
   <div class="meta" id="meta"></div>
 </div>
 <div class="card">
   <h1 style="font-size:16px">插件计划</h1>
-  <table>
-    <thead><tr><th>插件</th><th>当前</th><th>目标</th><th>处置</th><th>操作</th></tr></thead>
-    <tbody id="plugins"><tr><td colspan="5">正在读取…</td></tr></tbody>
-  </table>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>插件</th><th>当前</th><th>目标</th><th>处置</th><th>操作</th></tr></thead>
+      <tbody id="plugins"><tr><td colspan="5">正在读取…</td></tr></tbody>
+    </table>
+  </div>
 </div>
 <div class="card">
   <h1 style="font-size:16px">更新历史</h1>
-  <table class="history">
-    <thead><tr><th>时间</th><th>状态</th><th>核心</th><th>插件</th><th>结果</th></tr></thead>
-    <tbody id="history"><tr><td colspan="5" class="muted">暂无记录</td></tr></tbody>
-  </table>
+  <div class="table-wrap">
+    <table class="history">
+      <thead><tr><th>时间</th><th>状态</th><th>核心</th><th>插件</th><th>结果</th></tr></thead>
+      <tbody id="history"><tr><td colspan="5" class="muted">暂无记录</td></tr></tbody>
+    </table>
+  </div>
 </div>
 <div class="card" id="progressCard" hidden>
   <h1 style="font-size:16px">更新进度</h1>
-  <div style="height:10px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin:10px 0">
-    <div id="progressBar" style="height:100%;width:0;background:#2563eb;transition:width .3s"></div>
+  <div id="progressTrack" role="progressbar" aria-label="更新进度" aria-valuemin="0" aria-valuemax="100">
+    <div id="progressBar"></div>
   </div>
-  <pre id="progress"></pre>
+  <pre id="progress" role="log" aria-live="polite"></pre>
 </div>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
+  const TOKEN = document.querySelector('meta[name="dsh-update-token"]')?.content || '';
   let snapshot = null;
   let runId = null;
   let poll = null;
+  let pollFailures = 0;
 
   function esc(value) {
-    return String(value == null ? '' : value).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    return String(value == null ? '' : value).replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+  }
+
+  async function api(url, options = {}) {
+    const headers = new Headers(options.headers || {});
+    headers.set('x-dsh-update-token', TOKEN);
+    const response = await fetch(url, { ...options, headers, cache: 'no-store' });
+    let data = {};
+    try { data = await response.json(); } catch { /* non-JSON error */ }
+    return { response, data };
   }
 
   function renderHistory(history) {
@@ -92,12 +160,12 @@
     }
     $('history').innerHTML = history.map((entry) => {
       const when = entry.startedAt ? new Date(entry.startedAt).toLocaleString() : entry.run;
-      const stateClass = entry.state === 'succeeded' ? 'badge' : 'badge warn';
+      const stateClass = entry.state === 'succeeded' || entry.state === 'rolled-back' ? 'badge' : 'badge warn';
       return '<tr><td>' + esc(when) + '</td>' +
         '<td><span class="' + stateClass + '">' + esc(entry.state) + '</span></td>' +
         '<td>' + esc(entry.coreVersion || entry.targetCore || '—') + '</td>' +
         '<td>' + (entry.updated ? entry.updated.length : 0) + ' 更新 / ' + (entry.kept || 0) + ' 保持</td>' +
-        '<td>' + esc(entry.message || '') + (entry.rolledBack ? ' · 已回滚' : '') + '</td></tr>';
+        '<td>' + esc(entry.message || '') + (entry.rolledBack ? ' · 已完整回滚' : '') + '</td></tr>';
     }).join('');
   }
 
@@ -114,40 +182,84 @@
     const percent = typeof result.percent === 'number' && result.percent >= 0
       ? ` ${Math.round(result.percent)}%` : '';
     const size = result.total ? ` (${(result.total / 1024 / 1024).toFixed(1)} MB)` : '';
-    $('progress').textContent = `${stage}${percent}${size}\n${result.message || ''}\n最后更新：${result.updatedAt || '—'}`;
+    const lines = [`${stage}${percent}${size}`, result.message || ''];
+    if (result.detail) lines.push(`\n详情：${result.detail}`);
+    if (result.coreRollbackDetail) lines.push(`核心回滚：${JSON.stringify(result.coreRollbackDetail)}`);
+    if (result.profileDetail) lines.push(`Profile 恢复：${result.profileDetail}`);
+    if (result.healthDetail) lines.push(`健康检查：${result.healthDetail}`);
+    lines.push(`最后更新：${result.updatedAt || '—'}`);
+    $('progress').textContent = lines.join('\n');
     const bar = $('progressBar');
-    if (bar) {
-      const pctValue = typeof result.percent === 'number' && result.percent >= 0 ? Math.min(100, result.percent) : null;
-      bar.style.width = pctValue === null ? '35%' : pctValue + '%';
-      bar.style.background = pctValue === null ? '#93c5fd' : '#2563eb';
+    const track = $('progressTrack');
+    if (typeof result.percent === 'number' && result.percent >= 0) {
+      const pct = Math.min(100, result.percent);
+      bar.style.width = pct + '%';
+      track.setAttribute('aria-valuenow', String(Math.round(pct)));
+    } else {
+      bar.style.width = '35%';
+      track.removeAttribute('aria-valuenow');
     }
   }
 
   function startPolling(run) {
     runId = run;
+    pollFailures = 0;
     if (poll) clearInterval(poll);
     poll = setInterval(pollResult, 1000);
     pollResult();
   }
 
+  function stopPolling() {
+    if (poll) clearInterval(poll);
+    poll = null;
+  }
+
   function render(data) {
     snapshot = data;
+    const active = data.activeRun && !data.activeRun.stale;
+    const busy = data.running || active;
     $('current').textContent = data.current || '未知';
     $('latest').textContent = data.core.version || '未知';
-    $('pluginSummary').textContent = data.plan.updates + ' 个更新 / ' + data.plan.keeps + ' 个保持';
-    const core = data.core.update ? '<span class="badge warn">核心有新版</span>' : '<span class="badge">核心已是最新</span>';
-    $('state').innerHTML = core;
-    $('update').disabled = !data.updateAvailable;
-    $('rollback').disabled = !(data.coreState && (data.coreState.rollbackInstaller || data.coreState.rollbackPackage));
+    $('pluginSummary').textContent = data.plan.updates + ' 个更新 / ' + data.plan.keeps + ' 个保持' +
+      (data.plan.blockers?.length ? ' / ' + data.plan.blockers.length + ' 个兼容阻断' : '') +
+      (data.sourceWarnings?.length ? ' / ' + data.sourceWarnings.length + ' 个源检查失败' : '') +
+      (data.unverifiedTargets?.length ? ' / ' + data.unverifiedTargets.length + ' 个待验证' : '');
+    const core = data.core.update
+      ? '<span class="badge warn">核心有新版</span>'
+      : data.core.feedUnavailable
+        ? '<span class="badge warn">' + esc(data.core.reason || '当前渠道暂无可用核心 feed') + '</span>'
+        : '<span class="badge">核心已是最新</span>';
+    const compatibilityRisks = data.compatibilityRisks || [];
+    const blocked = compatibilityRisks.length
+      ? ' <span class="badge warn">' + compatibilityRisks.length + ' 个已安装插件与目标核心不兼容，更新前需确认</span>' : '';
+    const warnings = data.sourceWarnings?.length
+      ? ' <span class="badge warn">' + data.sourceWarnings.length + ' 个插件源暂时无法检查，已保持当前版本</span>' : '';
+    const unverified = data.unverifiedTargets?.length
+      ? ' <span class="badge warn">' + data.unverifiedTargets.length + ' 个新版插件缺少兼容契约，未自动更新</span>' : '';
+    $('state').innerHTML = core + blocked + warnings + unverified;
+    $('update').disabled = !data.updateAvailable || busy;
+    $('update').title = compatibilityRisks.length ? (data.blockReason || '存在兼容性风险') : '';
+    const hasCoreRollback = Boolean(data.rollback?.core);
+    const hasProfileRollback = Boolean(data.rollback?.profile);
+    $('rollback').disabled = busy || (!hasCoreRollback && !hasProfileRollback);
+    $('rollback').textContent = hasCoreRollback ? '回滚核心和插件' : '回滚插件';
+    $('rollback').title = hasCoreRollback
+      ? '回滚核心与插件，并重启应用'
+      : (hasProfileRollback ? '当前没有核心回滚包，只能恢复插件 profile' : '没有可用回滚点');
+    const rollbackText = hasCoreRollback
+      ? '可回滚核心 ' + (data.coreState.currentBefore || '')
+      : (hasProfileRollback ? '仅可回滚插件 profile' : '无可用回滚点');
     $('meta').textContent = '上次检查 ' + (data.checkedAt ? new Date(data.checkedAt).toLocaleString() : '—') +
       ' · 自动检查每 ' + (data.autoCheckHours || 0) + ' 小时' +
       ' · 自动安装' + (data.autoApply ? '已开启' : '关闭') +
-      (data.coreState && data.coreState.rollbackInstaller
-        ? ' · 可回滚核心 ' + data.coreState.currentBefore
-        : (data.coreState ? ' · 可回滚插件' : ''));
+      ' · ' + rollbackText +
+      (data.activeRun?.stale ? ' · 检测到可能中断的旧任务' : '');
     $('plugins').innerHTML = data.plan.items.map((item) => {
       let action = '<span class="tag ' + (item.action === 'update' ? 'update' : 'keep') + '">' +
         (item.action === 'update' ? '更新' : '保持') + '</span>';
+      if (item.action !== 'update' && (item.installedCompatibility === 'incompatible' || item.installedCompatibility === 'invalid')) {
+        action += ' <span class="tag warn">当前版本不兼容</span>';
+      }
       let button = '';
       if (item.action === 'update') {
         button = '<button class="mini" data-ignore="' + esc(item.name) + '" data-version="' +
@@ -156,14 +268,18 @@
         button = '<button class="mini" data-clear="' + esc(item.name) + '">取消忽略</button>';
         action += ' <span class="tag">已忽略 ' + esc(data.ignored[item.name]) + '</span>';
       } else if (item.reason === 'repository-mismatch') {
-        action += ' <span class="tag">仓库不一致</span>';
+        action += ' <span class="tag warn">仓库不一致</span>';
+      } else if (item.reason === 'source-check-failed') {
+        action += ' <span class="tag warn" title="' + esc(item.sourceError || '') + '">源检查失败</span>';
+      } else if (item.reason === 'unverified-compatibility') {
+        action += ' <span class="tag warn" title="候选版本 ' + esc(item.candidateVersion || '') + ' 缺少 engines.dsh/peerDependencies 契约">待验证</span>';
       }
       return '<tr><td>' + esc(item.name) + '</td><td>' + esc(item.from || '—') + '</td>' +
         '<td>' + esc(item.version || item.to || '不变') + '</td>' +
         '<td>' + action + '</td><td>' + button + '</td></tr>';
     }).join('') || '<tr><td colspan="5">没有插件</td></tr>';
     renderHistory(data.history);
-    if (data.activeRun && data.activeRun.run) {
+    if (data.activeRun && data.activeRun.run && !data.activeRun.stale) {
       renderProgress(data.activeRun);
       startPolling(data.activeRun.run);
     }
@@ -172,8 +288,7 @@
   async function load() {
     $('check').disabled = true;
     try {
-      const response = await fetch('/dsh-update/api/status', { cache: 'no-store' });
-      const data = await response.json();
+      const { response, data } = await api('/dsh-update/api/status');
       if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
       render(data);
     } catch (error) {
@@ -186,39 +301,68 @@
   async function pollResult() {
     if (!runId) return;
     try {
-      const response = await fetch('/dsh-update/api/result?run=' + encodeURIComponent(runId), { cache: 'no-store' });
-      if (!response.ok) return;
-      const result = await response.json();
-      renderProgress(result);
-      if (['succeeded', 'failed', 'rolled-back'].includes(result.state)) {
-        clearInterval(poll);
-        poll = null;
-        $('state').textContent = result.message || result.state;
+      const { response, data } = await api('/dsh-update/api/result?run=' + encodeURIComponent(runId));
+      if (response.status === 404) {
+        pollFailures += 1;
+        if (pollFailures >= 30) {
+          stopPolling();
+          $('state').textContent = '长时间无法读取更新结果，请重新打开设置页检查历史记录。';
+        }
+        return;
+      }
+      if (!response.ok) {
+        if (response.status === 403) {
+          stopPolling();
+          $('state').textContent = '会话校验失败，请重新打开设置页。';
+        }
+        return;
+      }
+      pollFailures = 0;
+      renderProgress(data);
+      if (['succeeded', 'failed', 'rolled-back'].includes(data.state)) {
+        stopPolling();
+        runId = null;
+        $('state').textContent = data.message || data.state;
         setTimeout(load, 1500);
       }
-    } catch { /* app may be closing */ }
+    } catch {
+      // The Desktop may be closing; the restarted page will resume from active-run.
+    }
   }
 
   $('check').onclick = load;
   $('update').onclick = async () => {
     if (!snapshot || !snapshot.updateAvailable) return;
     const coreText = snapshot.core.update ? ('核心 ' + snapshot.current + ' → ' + snapshot.core.version) : '核心不变';
-    const ok = confirm('即将关闭并重启 DeepSeek Harness。\n' + coreText + '，' + snapshot.plan.updates + ' 个插件更新。\n\n请先保存正在编辑的内容，然后确认继续。');
+    const rollbackText = snapshot.rollback?.core
+      ? '已准备核心回滚包。'
+      : '注意：本次没有可用的核心回滚包，只准备插件回滚。';
+    const warningText = snapshot.sourceWarnings?.length
+      ? `${snapshot.sourceWarnings.length} 个插件源暂时无法检查，这些插件将保持当前版本。`
+      : '';
+    const riskNames = (snapshot.compatibilityRisks || []).map((item) => item.name).join('、');
+    const riskText = riskNames
+      ? `警告：以下已安装插件与目标核心不兼容，更新后可能无法加载：${riskNames}。`
+      : '';
+    const ok = confirm('即将关闭并重启 DeepSeek Harness。\n' + coreText + '，' + snapshot.plan.updates + ' 个插件更新。\n' +
+      rollbackText + '\n' + (warningText ? warningText + '\n' : '') + (riskText ? riskText + '\n' : '') +
+      '\n请先保存正在编辑的内容，然后确认继续。');
     if (!ok) return;
     $('update').disabled = true;
     $('progressCard').hidden = false;
     $('progressCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     $('progress').textContent = '正在启动更新…';
     try {
-      const response = await fetch('/dsh-update/api/update', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ confirm: true }),
+      const { response, data } = await api('/dsh-update/api/update', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ confirm: true, acceptIncompatible: (snapshot.compatibilityRisks || []).length > 0 }),
       });
-      const data = await response.json();
       if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
       startPolling(data.run || data.runDir.split(/[\\/]/).pop());
     } catch (error) {
       $('state').textContent = '更新失败：' + error.message;
-      $('update').disabled = false;
+      $('update').disabled = !snapshot?.updateAvailable;
     }
   };
 
@@ -231,10 +375,11 @@
       ? { name: ignore.dataset.ignore, version: ignore.dataset.version }
       : { name: clear.dataset.clear, clear: true };
     try {
-      const response = await fetch('/dsh-update/api/ignore', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      const { response, data } = await api('/dsh-update/api/ignore', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
       });
-      const data = await response.json();
       if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
       render(data);
     } catch (error) {
@@ -243,16 +388,21 @@
   };
 
   $('rollback').onclick = async () => {
-    if (!snapshot || !snapshot.coreState) return;
-    if (!confirm('将回滚核心和插件到更新前状态，并重启 DeepSeek Harness。确认继续？')) return;
+    if (!snapshot || (!snapshot.rollback?.core && !snapshot.rollback?.profile)) return;
+    const core = Boolean(snapshot.rollback?.core);
+    const prompt = core
+      ? '将回滚核心和插件到更新前状态，并重启 DeepSeek Harness。确认继续？'
+      : '当前没有核心回滚包，只会恢复插件 profile 并重启 DeepSeek Harness。确认继续？';
+    if (!confirm(prompt)) return;
     $('rollback').disabled = true;
     $('progressCard').hidden = false;
     $('progress').textContent = '正在启动回滚…';
     try {
-      const response = await fetch('/dsh-update/api/rollback', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ confirm: true }),
+      const { response, data } = await api('/dsh-update/api/rollback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ confirm: true }),
       });
-      const data = await response.json();
       if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
       startPolling(data.run || data.runDir.split(/[\\/]/).pop());
     } catch (error) {
@@ -261,7 +411,11 @@
     }
   };
 
-  load();
+  if (!TOKEN) {
+    $('state').textContent = '设置页缺少会话令牌，请重新打开。';
+  } else {
+    load();
+  }
 })();
 </script>
 </body>

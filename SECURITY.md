@@ -14,6 +14,7 @@ Include affected version, platform, reproduction steps, impact and any suggested
 
 | Version | Security support |
 |---|---|
+| 0.3.x | Yes |
 | 0.2.x | Yes |
 | 0.1.x | No |
 
@@ -27,11 +28,20 @@ Include affected version, platform, reproduction steps, impact and any suggested
 - Profile activation uses rename with bounded retry. Cross-volume fallback copies, verifies a full SHA-256 tree hash, then renames into place.
 - Rollback never swallows the initial rename error. A failed recovery keeps a `.failed-*` path and enters safe mode.
 - Live prototype endpoints bind only to `127.0.0.1`, validate exact Host and Origin, require a per-process token, accept only bounded JSON and expose no arbitrary file, command, URL or home parameter.
+- The Desktop updater API accepts only loopback clients, validates Host/Origin, requires a per-mount CSRF token and accepts only `application/json` mutations.
+- Desktop installers must come from the official HTTPS host, match the feed `sha512`, have a valid Authenticode signature and name the official DeepSeek signer. Redirects remain HTTPS-only and the downloaded bytes must still satisfy the hash/signature checks.
+- Update and rollback plans are single-flight; `active-run.json` blocks re-entry after a Desktop restart and result/core state files use atomic writes.
+- Run-lock owners are checked for liveness and transferred to a detached supervisor; a helper crash without a terminal result starts one journal-driven recovery pass.
+- Desktop plugin target versions without a DSH compatibility contract are held, not auto-installed; source lookup failures are surfaced per plugin and suppress `autoApply`.
+- Desktop core updates are channel-bound: prerelease cores use nightly, stable cores never silently use nightly, and a missing stable feed leaves the core unchanged.
+- Helper command timeouts wait for process-tree termination before rollback. Profile rollback includes manifest, locks and known DSH config files, and prefers offline pnpm restoration. Success requires a run-bound settled heartbeat after a ten-second stability window.
+- Historical updater artifacts are report-only by default (`cleanup-report.json`); deleting old installers/profile backups requires explicit `pruneOldArtifacts: true`.
+- The plugin installer accepts only the expected package name, confines its destination to the profile's `node_modules`, and restores the previous plugin/profile on failure.
 - Telemetry is disabled by default. Any configured endpoint must be HTTPS, contains no credentials, exposes no plugin names or paths, and drops a failed batch without affecting an update.
 
 ## Out of scope
 
 - Malicious plugins already executing inside the Harness process.
 - A compromised local account or `$DSH_HOME`.
-- Electron installer signing, notarization and native OS recovery, which belong to the desktop host.
+- Electron installer signing, notarization and native OS recovery, which belong to the desktop host. The updater verifies the official Desktop installer before execution but does not replace OS code-signing policy.
 - Vulnerabilities in npm, pnpm, Electron or DeepSeek Harness itself.

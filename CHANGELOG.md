@@ -2,6 +2,21 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
+## [0.3.17] - 2026-11-15
+
+### Fixed
+
+- Exact Desktop version detection now reads both `ProductVersion` and `FileVersion`. Windows commonly reports `ProductVersion=0.2.2.0` while `FileVersion=0.2.2-rc.3`; the previous reader lost the prerelease suffix and treated a successful install as `rollback-version-not-observed`.
+- Added unregistered-install discovery for `C:\DeepSeekHarness`, Program Files, per-user LocalAppData and the user home. Running-process paths are read through CIM and PowerShell JSON is base64-wrapped as UTF-8, so Chinese usernames or Chinese installation directories are no longer decoded as mojibake and incorrectly replaced by a stale registry path.
+- Installer and rollback-installer runs no longer capture stdout/stderr. A Desktop auto-started by NSIS can inherit those pipes and prevent the installer process's `close` event for up to the 20-minute timeout; not capturing them lets the helper continue as soon as the installer exits.
+- Before launch health verification the updater now closes any instance auto-started by the installer and launches a fresh process with its own heartbeat timestamp and startup log. This prevents a stale pre-verification heartbeat from being mistaken for a failed startup.
+- Ignored local `hao/` and `*.workbuddy/` directories so a moved Desktop installation can never enter the public repository or npm package.
+- The installer now copies the plugin into `~/.dsh/updates/dsh-update-plugin/source/<name>-<version>` before `dsh plugin add`. The profile no longer records a `file:` dependency on the downloaded repository, so moving or deleting the checkout cannot break Desktop startup.
+
+### Tests
+
+- Added exact-version fallback and portable-path tests; **162/162** pass.
+
 ## [0.3.16] - 2026-11-12
 
 ### Fixed

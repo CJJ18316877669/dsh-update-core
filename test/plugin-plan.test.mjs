@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import {
   channelForVersion,
   checkDesktop,
+  chooseDesktopVersion,
   compat,
   createPluginPlan,
   desktopInstallerUrl,
@@ -262,6 +263,15 @@ test('desktop version: four-part ProductVersion normalises without hiding a prer
   assert.equal(normalizeDesktopVersion('0.2.2.0'), '0.2.2');
   assert.equal(normalizeDesktopVersion('0.2.2-rc.1'), '0.2.2-rc.1');
   assert.equal(normalizeDesktopVersion('v0.2.2'), '0.2.2');
+});
+
+test('desktop version: FileVersion exact prerelease wins over generic ProductVersion', () => {
+  assert.equal(chooseDesktopVersion({ product: '0.2.2.0', file: '0.2.2-rc.3' }), '0.2.2-rc.3');
+  assert.equal(chooseDesktopVersion({ product: '0.2.2-rc.2', file: '0.2.2.0' }), '0.2.2-rc.2');
+  assert.equal(chooseDesktopVersion({
+    product: '0.2.2.0', file: '0.2.2.0', registered: '0.2.2-rc.1',
+  }), '0.2.2-rc.1');
+  assert.equal(chooseDesktopVersion({ product: '0.2.2.0', file: '0.2.2.0' }), '0.2.2');
 });
 
 test('desktop version: reader works for an executable without matching uninstall metadata', { skip: process.platform !== 'win32' }, async () => {

@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { closeSync, existsSync, openSync } from 'node:fs';
 import { readFile, unlink } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
@@ -77,10 +77,12 @@ function appendTail(current, chunk) {
 function run(command, args, options = {}) {
   return new Promise((resolvePromise) => {
     const timeoutMs = options.timeoutMs ?? 120_000;
+    const capture = options.capture !== false;
     const child = spawn(command, args, {
       windowsHide: true,
       env: options.env || process.env,
       cwd: options.cwd,
+      stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'ignore',
     });
     let stdout = '';
     let stderr = '';
@@ -153,6 +155,22 @@ function run(command, args, options = {}) {
       else finish(code ?? -1);
     });
   });
+}
+
+function runInstaller(installer, args) {
+  const result = spawnSync(installer, args, {
+    windowsHide: true,
+    stdio: 'ignore',
+    timeout: INSTALL_TIMEOUT_MS,
+    env: process.env,
+  });
+  const timedOut = result.error?.code === 'ETIMEDOUT';
+  return {
+    code: timedOut ? 124 : (result.status ?? -1),
+    stdout: '',
+    stderr: result.error?.message || (result.signal ? `signal ${result.signal}` : ''),
+    timedOut,
+  };
 }
 
 function appStartupLogPath() {
@@ -317,6 +335,14 @@ async function watchStartupLog(logPath) {
 }
 
 async function launchAndVerify() {
+  // NSIS may auto-start the installed app before returning. A second start
+  // cannot produce a fresh heartbeat because the desktop is single-instance,
+  // so close any leftover instance and always verify a process we launched.
+  const closed = await closeDesktop();
+  if (closed.code !== 0) {
+    return { ok: false, reason: `无法关闭安装器启动的 Desktop：${closed.stderr || 'unknown error'}` };
+  }
+  await new Promise((resolvePromise) => setTimeout(resolvePromise, 500));
   const launchedAt = Date.now();
   const logPath = appStartupLogPath();
   await launchDesktop(logPath);
@@ -476,7 +502,7 @@ async function rollbackCore() {
   if (closed.code !== 0) {
     return { ok: false, reason: 'close-desktop-failed', detail: (closed.stderr || '').slice(-1000) };
   }
-  const installed = await run(rollbackInstaller, ['/S', '--updated'], { timeoutMs: INSTALL_TIMEOUT_MS });
+  const installed = runInstaller(rollbackInstaller, ['/S', '--updated']);
   if (installed.code !== 0) {
     return {
       ok: false,
@@ -654,7 +680,7 @@ async function updateFlow() {
   if (installerPath) {
     coreMutated = true;
     await save({ state: 'installing-core', message: `正在安装 DeepSeek Harness ${plan.targetCore}…` });
-    const installed = await run(installerPath, ['/S', '--updated'], { timeoutMs: INSTALL_TIMEOUT_MS });
+    const installed = runInstaller(installerPath, ['/S', '--updated']);
     if (installed.code !== 0) {
       await failWithRollback(
         installed.timedOut ? '核心安装超时' : `核心安装失败（exit ${installed.code}）`,

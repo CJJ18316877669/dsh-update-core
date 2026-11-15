@@ -55,6 +55,37 @@ was invoked.
 | `startupLog` | `ok` |
 | Final status | core `0.2.2-rc.1`, channel `nightly` |
 
+## 0.3.17 path and version verification — 2026-11-15
+
+Windows x64, plugin `0.2.16`, core `0.2.2-rc.3`, nightly channel.
+
+Verified:
+
+- A moved Desktop path containing Chinese characters is now read through CIM
+  and UTF-8 Base64; the previous PowerShell console decoding produced mojibake
+  and silently fell back to a stale uninstall path.
+- Exact versions prefer `FileVersion` (`0.2.2-rc.3`) over the four-part
+  `ProductVersion` (`0.2.2.0`), so an unregistered installation no longer fails
+  the post-install version check.
+- The NSIS installer and rollback installer are run with `spawnSync`; helper no
+  longer waits on inherited stdout/stderr pipes or a detached app process.
+- A plugin-update run completed successfully after the core was already at
+  `0.2.2-rc.3`: run `2026-11-15T05-07-01-666Z`, 2 plugin updates
+  (`@linxin666/dsh-client-ui-skin-center 0.4.16 → 0.4.18`,
+  `@nanmicoder/dsh-agent-teams 0.1.29 → 0.1.30`), `appHealthy: true`,
+  `startupLog: ok`, `profileDependencies: ok`.
+- The matching profile rollback completed: run
+  `2026-11-15T05-09-26-059Z`, `rolled-back`, `profileOnly: true`,
+  `profileRestored: true`, `appHealthy: true`, `startupLog: ok`.
+- A core install of `0.2.2-rc.3` was observed in run
+  `2026-11-14T15-56-11-887Z` before that run was interrupted during plugin
+  updates; it is not counted as a terminal core acceptance run.
+
+Known boundary: the official NSIS installer always targets the registered
+installation path. A manually copied/moved Desktop directory can be detected,
+but the installer does not follow the copy; use the registered installation for
+core updates.
+
 ## Evidence handling
 
 Raw run records contain machine-specific paths and are intentionally not committed

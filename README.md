@@ -1,19 +1,19 @@
 # DeepSeek Harness 一键更新器
 
-> 版本：0.3.14<br>
-> 日期：2026-11-12<br>
+> 版本：0.3.17<br>
+> 日期：2026-11-15<br>
 > 适用：DeepSeek Harness（`dsh`）0.2.x，Cordis「一切皆插件」架构<br>
 > 状态：**Windows + nightly 早期预览（Beta）**<br>
 > 目标：一个按钮完成 Harness 版本更新，为可验证的插件选择兼容版本，并在失败时恢复核心与 profile；无法确认兼容性的插件保持当前版本。
 
-**当前状态：`dsh-update-core@0.3.14` 与 `dsh-update-core-plugin@0.2.13` 可运行、可测试、可复用，仅支持 Windows x64。** 159 项自动化测试通过；已提供 Desktop 设置页 DSH 插件，可一键更新核心与兼容插件；已覆盖真实 `cordis.patch.yml` 禁用/逐字节恢复、staging 启动门控、原子切换、独立 watchdog、跨平台路径与进程树、默认关闭的遥测上报、真实 registry SRI 冒烟，以及 live 原型。真实 Node 24 + dsh staging、Windows Desktop 签名/启动证据见 `docs/REAL_ACCEPTANCE.md`，当前插件的真实核心升级与回滚见 `docs/PLUGIN_ACCEPTANCE.md`。
+**当前状态：`dsh-update-core@0.3.17` 与 `dsh-update-core-plugin@0.2.16` 可运行、可测试、可复用，仅支持 Windows x64。** 162 项自动化测试通过；已提供 Desktop 设置页 DSH 插件，可一键更新核心与兼容插件；已覆盖真实 `cordis.patch.yml` 禁用/逐字节恢复、staging 启动门控、原子切换、独立 watchdog、跨平台路径与进程树、默认关闭的遥测上报、真实 registry SRI 冒烟，以及 live 原型。真实 Node 24 + dsh staging、Windows Desktop 签名/启动证据见 `docs/REAL_ACCEPTANCE.md`，当前插件的真实核心升级与回滚见 `docs/PLUGIN_ACCEPTANCE.md`。
 
 ### 当前公开预览边界
 
 - 核心渠道：当前只支持 **nightly**；稳定版核心不会跨渠道升级，官方 stable feed 未提供时核心保持不动。
 - 健康检查：会验证更新插件稳定运行、核心版本、profile 依赖完整性，并扫描 Desktop 启动日志中的 `entry did not activate` / `pending (waiting for service: …)`。如果 DSH 没有输出激活警告，仍不能绝对证明每个第三方插件都已激活。
 - 自动更新：`autoApply` 默认关闭；启用后会关闭并重启 Desktop，存在未保存会话中断风险。
-- 安装器：官方 NSIS 安装器可能触发 UAC；核心回滚依赖官方旧版安装包仍可下载。
+- 安装器：官方 NSIS 安装器可能触发 UAC；核心回滚依赖官方旧版安装包仍可下载。核心更新以官方注册安装路径为准；手工复制/移动出来的 Desktop 目录可作为路径探测对象，但官方安装器不会跟随移动副本，不能保证原地升级。
 - 平台：Windows x64；Linux/macOS 不在当前支持范围。
 
 ---
@@ -44,7 +44,7 @@ npm run plugin:install -- --cli 'C:\你的安装目录\resources\runtime\cli\bin
 
 > **核心渠道**：插件根据当前核心版本自动判断渠道。预发布核心走官方 nightly feed；稳定版核心不会回退到 nightly，若官方 stable feed 尚未提供，则核心保持当前版本，只处理插件更新。可用 `feedUrl` 显式覆盖官方 feed，但仍会校验目标版本渠道。
 
-Desktop 的定位不依赖固定安装目录：会读取运行中的进程路径、卸载项的 `InstallLocation` / `DisplayIcon`，并兼容 `DeepSeek Harness 0.2.1-rc.5` 这类带版本号的 DisplayName，因此自定义安装目录也能识别。
+Desktop 的定位不依赖固定安装目录：优先使用运行中的进程路径，再读取卸载项的 `InstallLocation` / `DisplayIcon`，并补充 `C:\DeepSeekHarness`、Program Files、LocalAppData 等默认候选。运行进程路径通过 CIM 读取，PowerShell JSON 以 UTF-8 Base64 回传，因此中文用户名或中文安装目录不会乱码；精确版本优先读取 EXE 的 `FileVersion`，避免未注册目录的 `ProductVersion=0.2.2.0` 丢失 `-rc.N` 后缀；注册表信息只在路径完全匹配时采用。
 
 页面会显示当前核心、官方最新核心，以及每个插件的处置：
 
@@ -87,7 +87,7 @@ npm run plugin:install
 npm run plugin:install -- --home C:\Temp\dsh-e2e-home --profile test --cli 'C:\你的安装目录\resources\runtime\cli\bin\dsh.cmd' --allow-running
 ```
 
-该脚本会验证包名和 profile 名、把目标路径限制在 `node_modules` 内，先备份旧插件及 profile 配置/锁文件，再重新执行 `dsh plugin add`；失败时自动恢复，避免 pnpm 复用旧目录。
+该脚本会验证包名和 profile 名、把目标路径限制在 `node_modules` 内，先备份旧插件及 profile 配置/锁文件，并把插件源码复制到 `~/.dsh/updates/dsh-update-plugin/source/<name>-<version>` 后再执行 `dsh plugin add`；因此之后移动或删除下载的仓库不会破坏 profile。失败时自动恢复，避免 pnpm 复用旧目录。
 
 更新前备份位于：
 
@@ -104,7 +104,7 @@ npm run plugin:install -- --home C:\Temp\dsh-e2e-home --profile test --cli 'C:\�
 要求 Node.js ≥ 20；真实 dsh 当前 release 自身要求 Node.js ≥ 24.9.0，更新器会在下载前按目标包的 `engines.node` 拒绝不满足的宿主。
 
 ```bash
-npm test                         # 159 项，零依赖
+npm test                         # 162 项，零依赖
 npm run ui                       # live 原型，默认仅监听 127.0.0.1 的随机端口
 npm run smoke:registry           # 真实 registry + tarball SRI 冒烟
 node src/cli.mjs demo --scenario success --fast
@@ -122,7 +122,7 @@ node src/cli.mjs status --home <dir>
 | `docs/PLUGIN_ACCEPTANCE.md` | 当前 Desktop 插件的真实核心升级与回滚验收 |
 | `RELEASE.md` | 发布范围、验收门槛、tag 流程与不可发布条件 |
 | `src/` | 零依赖 ESM 实现：编排、Journal、watchdog、ProfileStore、门控、后端、路径/进程/文件系统、i18n、遥测、live server |
-| `test/` | 159 项单元、集成、CLI 契约、故障注入与安全边界用例 |
+| `test/` | 162 项单元、集成、CLI 契约、故障注入与安全边界用例 |
 | `prototype.html` / `preview*.png` | live/离线双模式原型与 6 张由真实页面重拍的 1080×1100 截图 |
 | `scripts/` | 真实 registry 冒烟与 Edge DevTools 截图脚本 |
 | `LICENSE` / `CHANGELOG.md` / `SECURITY.md` / `PRIVACY.md` | MIT 许可、版本记录、安全与隐私说明 |

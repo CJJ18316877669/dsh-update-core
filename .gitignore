@@ -29,5 +29,9 @@ Desktop.ini
 .vscode/
 .idea/
 
+# Local Desktop installation / moved app copies
+hao/
+*.workbuddy/
+
 # WorkBuddy project memory is local-only and may contain private context
 .workbuddy/

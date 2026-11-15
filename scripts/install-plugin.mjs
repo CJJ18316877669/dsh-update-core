@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { copyFile, mkdir, mkdtemp, readFile, rename, rm } from 'node:fs/promises';
+import { copyFile, cp, mkdir, mkdtemp, readFile, rename, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { findDesktopExe } from '../plugin/lib/plan.mjs';
@@ -29,6 +29,12 @@ if (!existsSync(packageFile)) {
   process.exit(2);
 }
 const pkg = JSON.parse(await readFile(packageFile, 'utf8'));
+
+// pnpm records a local plugin as a file: dependency. Install from a stable
+// copy under the DSH home, not from the checkout, so moving or deleting the
+// downloaded repository later cannot break the Desktop profile.
+const sourceRoot = join(home, 'updates', 'dsh-update-plugin', 'source');
+const installDir = resolve(sourceRoot, `${pkg.name}-${pkg.version}`);
 
 let destination;
 try {
@@ -148,6 +154,15 @@ async function restore() {
 }
 
 try {
+  if (resolve(pluginDir) !== installDir) {
+    await mkdir(sourceRoot, { recursive: true });
+    await rm(installDir, { recursive: true, force: true });
+    await cp(pluginDir, installDir, {
+      recursive: true,
+      filter: (source) => !source.split(/[\\/]/).includes('node_modules'),
+    });
+    console.log(`copied plugin source to ${installDir}`);
+  }
   await mkdir(nodeModules, { recursive: true });
   await backupProfileFiles();
   if (existsSync(destination)) {
@@ -175,7 +190,7 @@ try {
       DSH_HOME: home,
       DSH_INSTALL_CLI: cli,
       DSH_INSTALL_PROFILE: profile,
-      DSH_INSTALL_PLUGIN_DIR: pluginDir,
+      DSH_INSTALL_PLUGIN_DIR: installDir,
     },
   });
   if (result.status !== 0) {

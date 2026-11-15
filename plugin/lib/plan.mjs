@@ -592,12 +592,20 @@ async function queryDesktopInfo() {
     "foreach($p in $items){ $candidates=@(); if($p.DisplayIcon){$candidates += (($p.DisplayIcon -replace ',\\d+$','').Trim('\"'))}; if($p.InstallLocation){$candidates += (Join-Path $p.InstallLocation 'DeepSeek Harness.exe')}; foreach($c in $candidates){ if(Test-Path -LiteralPath $c){ $v=$null; if($p.DisplayVersion){$v=[string]$p.DisplayVersion}; $rows += [pscustomobject]@{exe=[string]$c;version=$v}; break } } }",
     "$proc=@(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'DeepSeek Harness' })[0]",
     "$runningExe=$null; if($proc){ try { if($proc.Path){$runningExe=[string]$proc.Path} } catch {} }",
-    "[pscustomobject]@{runningExe=$runningExe;items=@($rows)} | ConvertTo-Json -Depth 4 -Compress",
+    "$cim=@(Get-CimInstance Win32_Process -Filter \"Name='DeepSeek Harness.exe'\" -ErrorAction SilentlyContinue | Sort-Object CreationDate -Descending | ForEach-Object { $_.ExecutablePath } | Where-Object { $_ -and (Test-Path -LiteralPath $_) })",
+    "if($cim.Count -gt 0){$runningExe=[string]$cim[0]}",
+    "$json=[pscustomobject]@{runningExe=$runningExe;items=@($rows)} | ConvertTo-Json -Depth 4 -Compress",
+    "[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))",
   ].join('; ');
   const found = await new Promise((resolve) => {
     execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true }, (error, stdout) => {
       if (error) return resolve(null);
-      try { resolve(JSON.parse(stdout.trim())); } catch { resolve(null); }
+      try {
+        const json = Buffer.from(stdout.trim(), 'base64').toString('utf8');
+        resolve(JSON.parse(json));
+      } catch {
+        resolve(null);
+      }
     });
   });
   const value = found && typeof found === 'object'
@@ -619,24 +627,62 @@ export async function findDesktopExe() {
   const registered = info?.items?.find((entry) => existsSync(entry.exe));
   if (registered) return registered.exe;
   const candidates = [
+    'C:\\DeepSeekHarness\\DeepSeek Harness.exe',
     'C:\\DeepSeek Harness\\DeepSeek Harness.exe',
-    join(process.env.LOCALAPPDATA || '', 'Programs', 'DeepSeek Harness', 'DeepSeek Harness.exe'),
+    join(homedir(), 'DeepSeekHarness', 'DeepSeek Harness.exe'),
+    join(homedir(), 'DeepSeek Harness', 'DeepSeek Harness.exe'),
   ];
+  for (const base of [process.env.ProgramFiles, process.env['ProgramFiles(x86)'], process.env.LOCALAPPDATA]) {
+    if (!base) continue;
+    candidates.push(
+      join(base, 'DeepSeek Harness', 'DeepSeek Harness.exe'),
+      join(base, 'DeepSeekHarness', 'DeepSeek Harness.exe'),
+    );
+  }
+  if (process.env.LOCALAPPDATA) {
+    candidates.push(join(process.env.LOCALAPPDATA, 'Programs', 'DeepSeek Harness', 'DeepSeek Harness.exe'));
+    candidates.push(join(process.env.LOCALAPPDATA, 'Programs', 'DeepSeekHarness', 'DeepSeek Harness.exe'));
+  }
   for (const candidate of candidates) {
     if (candidate && existsSync(candidate)) return candidate;
   }
   return null;
 }
 
-export async function readProductVersion(exe) {
+export async function readVersionInfo(exe) {
   const escaped = exe.replace(/'/g, "''");
-  const script = `(Get-Item -LiteralPath '${escaped}').VersionInfo.ProductVersion`;
+  const script = `$i=Get-Item -LiteralPath '${escaped}'; [pscustomobject]@{product=[string]$i.VersionInfo.ProductVersion;file=[string]$i.VersionInfo.FileVersion} | ConvertTo-Json -Compress`;
   return new Promise((resolve, reject) => {
     execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true }, (error, stdout) => {
       if (error) reject(error);
-      else resolve(stdout.trim());
+      else {
+        try {
+          const value = JSON.parse(stdout.trim());
+          resolve({ product: String(value.product || ''), file: String(value.file || '') });
+        } catch {
+          reject(new Error('invalid desktop version metadata'));
+        }
+      }
     });
   });
+}
+
+export async function readProductVersion(exe) {
+  const info = await readVersionInfo(exe);
+  return info.product || info.file;
+}
+
+/**
+ * Windows ProductVersion commonly strips a prerelease suffix (`0.2.2.0`),
+ * while FileVersion keeps it (`0.2.2-rc.3`). Prefer an exact prerelease from
+ * either field, then registry metadata, then a generic fallback.
+ */
+export function chooseDesktopVersion({ product, file, registered } = {}) {
+  const values = [file, product, registered]
+    .map((value) => normalizeDesktopVersion(value))
+    .filter((value) => value && parse(value));
+  const exact = values.find((value) => /-[0-9A-Za-z]/.test(value));
+  return exact || values[0] || '';
 }
 
 export function normalizeDesktopVersion(value) {
@@ -651,10 +697,19 @@ export async function readDesktopVersion(exe) {
   const info = await queryDesktopInfo();
   const normalizedExe = resolve(exe).toLowerCase();
   const registered = info?.items?.find((entry) => resolve(entry.exe).toLowerCase() === normalizedExe);
-  const registeredVersion = normalizeDesktopVersion(registered?.version);
-  if (registeredVersion && parse(registeredVersion)) return registeredVersion;
-  const product = await readProductVersion(exe);
-  return normalizeDesktopVersion(product);
+  let metadata = null;
+  try {
+    metadata = await readVersionInfo(exe);
+  } catch {
+    metadata = null;
+  }
+  const chosen = chooseDesktopVersion({
+    product: metadata?.product,
+    file: metadata?.file,
+    registered: registered?.version,
+  });
+  if (chosen && parse(chosen)) return chosen;
+  return normalizeDesktopVersion(metadata?.product || registered?.version);
 }
 
 export function desktopInstallerUrl(version) {
